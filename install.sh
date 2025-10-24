@@ -46,15 +46,66 @@ fi
 
 # Install Python dependencies
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
+
+install_python_deps() {
+    local pip_cmd="$1"
+    echo "Attempting to install with $pip_cmd..."
+    
+    # Try normal installation first
+    if $pip_cmd install numpy bleak; then
+        echo -e "${GREEN}✓ Python dependencies installed with $pip_cmd${NC}"
+        return 0
+    fi
+    
+    # If that fails, try with --break-system-packages (for externally managed environments)
+    echo "Normal installation failed, trying with --break-system-packages..."
+    if $pip_cmd install --break-system-packages numpy bleak; then
+        echo -e "${GREEN}✓ Python dependencies installed with $pip_cmd (using --break-system-packages)${NC}"
+        return 0
+    fi
+    
+    # If that fails, try with --user flag
+    echo "System installation failed, trying with --user flag..."
+    if $pip_cmd install --user numpy bleak; then
+        echo -e "${GREEN}✓ Python dependencies installed with $pip_cmd (user installation)${NC}"
+        return 0
+    fi
+    
+    return 1
+}
+
 if command -v pip3 &> /dev/null; then
-    pip3 install numpy bleak
-    echo -e "${GREEN}✓ Python dependencies installed with pip3${NC}"
+    if install_python_deps "pip3"; then
+        echo -e "${GREEN}✓ Python dependencies installation complete${NC}"
+    else
+        echo -e "${YELLOW}Warning: Failed to install with pip3. Trying pip...${NC}"
+        if command -v pip &> /dev/null; then
+            if install_python_deps "pip"; then
+                echo -e "${GREEN}✓ Python dependencies installation complete${NC}"
+            else
+                echo -e "${YELLOW}Warning: All pip installation methods failed.${NC}"
+                echo -e "${YELLOW}Please install Python dependencies manually:${NC}"
+                echo "  pip3 install numpy bleak"
+                echo "  # or if that fails:"
+                echo "  pip3 install --break-system-packages numpy bleak"
+                echo "  # or for user installation:"
+                echo "  pip3 install --user numpy bleak"
+            fi
+        else
+            echo -e "${YELLOW}Warning: pip not found. Please install Python dependencies manually:${NC}"
+            echo "  pip3 install numpy bleak"
+        fi
+    fi
 elif command -v pip &> /dev/null; then
-    pip install numpy bleak
-    echo -e "${GREEN}✓ Python dependencies installed with pip${NC}"
+    if install_python_deps "pip"; then
+        echo -e "${GREEN}✓ Python dependencies installation complete${NC}"
+    else
+        echo -e "${YELLOW}Warning: Failed to install with pip. Please install manually:${NC}"
+        echo "  pip install numpy bleak"
+    fi
 else
     echo -e "${YELLOW}Warning: pip not found. Please install Python dependencies manually:${NC}"
-    echo "  pip install numpy bleak"
+    echo "  pip3 install numpy bleak"
 fi
 
 # Create startup script if it doesn't exist

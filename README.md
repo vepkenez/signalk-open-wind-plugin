@@ -118,13 +118,29 @@ The plugin requires Python with the following packages:
 - `numpy`
 - `bleak` (for Bluetooth communication)
 
-**These are automatically installed** when you run `npm run install`. If you need to install them manually:
+**These are automatically installed** when you run `npm run install`. The installer will try multiple methods to handle different Python environments.
+
+### Manual Installation (if automatic fails)
+
+If the automatic installation fails (common on newer Ubuntu/Debian systems with externally managed Python environments):
 
 ```bash
-pip install numpy bleak
-# or
+# Try normal installation first
 pip3 install numpy bleak
+
+# If that fails, try with --break-system-packages
+pip3 install --break-system-packages numpy bleak
+
+# Or install for user only
+pip3 install --user numpy bleak
 ```
+
+### Troubleshooting Python Installation
+
+**Error: "externally-managed-environment"**
+- This is a security feature in newer Python systems
+- Use `--break-system-packages` flag (as shown above)
+- Or use `--user` flag for user-only installation
 
 ## Troubleshooting
 
