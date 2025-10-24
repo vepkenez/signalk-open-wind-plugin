@@ -1,7 +1,7 @@
 {
   "name": "signalk-open-wind-plugin",
-  "version": "1.0.0",
-  "description": "Signal K plugin for integrating OpenWind sensor data with automatic reinstallation capabilities",
+  "version": "1.0.1",
+  "description": "Signal K plugin for integrating OpenWind sensor data",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-category-ais",
@@ -19,7 +19,7 @@
   "scripts": {
     "install": "./install.sh",
     "install-signalk": "./install.sh",
-    "postinstall": "echo 'Run npm run install to set up the plugin in Signal K'",
+    "postinstall": "./install-python-deps.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2024-01-XX
+
+### Fixed
+- Fixed Signal K app store installation issues
+- Separated Python dependencies installation for app store compatibility
+- Enhanced install script to detect app store installations
+- Improved error handling and user feedback
+
+### Added
+- Separate `install-python-deps.sh` script for app store installations
+- Better detection of existing plugin installations
+- Enhanced startup script with improved plugin checking
+
+### Changed
+- Updated package.json with proper npm scripts
+- Improved installation documentation
+- Enhanced README with GitHub badges and better formatting
+
+## [1.0.0] - 2024-01-XX
+
 ### Added
 - Initial release of Signal K Open Wind Plugin
 - Wind data integration from OpenWind sensor

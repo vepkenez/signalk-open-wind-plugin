@@ -34,11 +34,15 @@ fi
 
 echo -e "${YELLOW}Installing plugin to Signal K server...${NC}"
 
-# Install the plugin
-cd "$SIGNALK_DIR"
-npm install "$PLUGIN_SOURCE"
-
-echo -e "${GREEN}✓ Plugin installed successfully${NC}"
+# Check if we're already installed via Signal K app store
+if [ -f "$SIGNALK_DIR/node_modules/signalk-open-wind-plugin/package.json" ]; then
+    echo -e "${GREEN}✓ Plugin already installed via Signal K app store${NC}"
+else
+    # Install the plugin manually
+    cd "$SIGNALK_DIR"
+    npm install "$PLUGIN_SOURCE"
+    echo -e "${GREEN}✓ Plugin installed successfully${NC}"
+fi
 
 # Install Python dependencies
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
@@ -67,23 +71,41 @@ if [ ! -f "$STARTUP_SCRIPT" ]; then
 SIGNALK_DIR="/home/damon/.signalk"
 PLUGIN_SOURCE="/home/damon/windplug"
 
-# Function to install plugin if not already linked
+# Function to check if plugin is installed
+check_plugin() {
+    local plugin_name="$1"
+    
+    if [ -f "$SIGNALK_DIR/node_modules/$plugin_name/package.json" ]; then
+        echo "Plugin $plugin_name is installed"
+        return 0
+    else
+        echo "Plugin $plugin_name not found"
+        return 1
+    fi
+}
+
+# Function to install plugin if not already present
 install_plugin() {
     local plugin_name="$1"
     local plugin_path="$2"
     
-    if [ ! -L "$SIGNALK_DIR/node_modules/$plugin_name" ]; then
+    if ! check_plugin "$plugin_name"; then
         echo "Installing plugin: $plugin_name"
         cd "$SIGNALK_DIR"
         npm install "$plugin_path"
         echo "Plugin $plugin_name installed successfully"
     else
-        echo "Plugin $plugin_name already linked"
+        echo "Plugin $plugin_name already installed"
     fi
 }
 
-# Install custom plugins
-install_plugin "open-wind" "$PLUGIN_SOURCE"
+# Check and install custom plugins
+if [ -d "$PLUGIN_SOURCE" ]; then
+    install_plugin "signalk-open-wind-plugin" "$PLUGIN_SOURCE"
+else
+    echo "Plugin source not found at $PLUGIN_SOURCE"
+    echo "Plugin may be installed via Signal K app store"
+fi
 
 echo "Plugin installation check complete"
 EOF
