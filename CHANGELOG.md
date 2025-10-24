@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2024-01-XX
+
+### Changed
+- Removed signalk-category-ais from keywords for better categorization
+- Kept wind and sailing keywords for improved discoverability
+
 ## [1.0.3] - 2024-01-XX
 
 ### Fixed
