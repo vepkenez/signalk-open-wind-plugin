@@ -46,10 +46,21 @@ A robust Signal K plugin for integrating OpenWind sensor data with automatic rei
 ```bash
 git clone https://github.com/vepkenez/signalk-open-wind-plugin.git
 cd signalk-open-wind-plugin
-./install.sh
+npm run install
 ```
 
-### Manual Install
+### Alternative: Direct Installation
+
+```bash
+# Install directly from GitHub
+cd ~/.signalk
+npm install https://github.com/vepkenez/signalk-open-wind-plugin.git
+npm run install
+```
+
+### Manual Install (Advanced)
+
+If you prefer manual installation:
 
 1. Copy plugin to Signal K directory:
    ```bash
@@ -107,9 +118,12 @@ The plugin requires Python with the following packages:
 - `numpy`
 - `bleak` (for Bluetooth communication)
 
-Install with:
+**These are automatically installed** when you run `npm run install`. If you need to install them manually:
+
 ```bash
 pip install numpy bleak
+# or
+pip3 install numpy bleak
 ```
 
 ## Troubleshooting

@@ -40,6 +40,19 @@ npm install "$PLUGIN_SOURCE"
 
 echo -e "${GREEN}✓ Plugin installed successfully${NC}"
 
+# Install Python dependencies
+echo -e "${YELLOW}Installing Python dependencies...${NC}"
+if command -v pip3 &> /dev/null; then
+    pip3 install numpy bleak
+    echo -e "${GREEN}✓ Python dependencies installed with pip3${NC}"
+elif command -v pip &> /dev/null; then
+    pip install numpy bleak
+    echo -e "${GREEN}✓ Python dependencies installed with pip${NC}"
+else
+    echo -e "${YELLOW}Warning: pip not found. Please install Python dependencies manually:${NC}"
+    echo "  pip install numpy bleak"
+fi
+
 # Create startup script if it doesn't exist
 STARTUP_SCRIPT="$SIGNALK_DIR/startup-plugins.sh"
 if [ ! -f "$STARTUP_SCRIPT" ]; then
