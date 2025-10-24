@@ -44,7 +44,7 @@ A robust Signal K plugin for integrating OpenWind sensor data with automatic rei
 ### Quick Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/vepkenez/signalk-open-wind-plugin.git
 cd signalk-open-wind-plugin
 ./install.sh
 ```
