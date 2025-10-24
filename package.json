@@ -1,0 +1,50 @@
+{
+  "name": "signalk-open-wind-plugin",
+  "version": "1.0.0",
+  "description": "Signal K plugin for integrating OpenWind sensor data with automatic reinstallation capabilities",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-ais",
+    "wind",
+    "sailing",
+    "nmea2000",
+    "openwind",
+    "sensor"
+  ],
+  "signalk-plugin-enabled-by-default": false,
+  "signalk": {
+    "displayName": "Open Wind Integrator"
+  },
+  "main": "plugin/index.js",
+  "scripts": {
+    "install-signalk": "./install.sh",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vepkenez/signalk-open-wind-plugin.git"
+  },
+  "homepage": "https://github.com/vepkenez/signalk-open-wind-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/vepkenez/signalk-open-wind-plugin/issues"
+  },
+  "author": {
+    "name": "Damon Ciarelli",
+    "email": "gdamon@gmail.com"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "child_process": "^1.0.2"
+  },
+  "devDependencies": {},
+  "files": [
+    "plugin/",
+    "public/",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ]
+}

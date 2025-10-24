@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Open Wind: Mast Rotation Gauge</title>
+  <script src="https://cdn.jsdelivr.net/npm/@signalk/client@1.1.0/dist/signalk-client.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 2em;
+    }
+    .gauge-container {
+      width: 300px;
+      height: 300px;
+      border: 10px solid #ccc;
+      border-radius: 50%;
+      margin: 0 auto;
+      position: relative;
+    }
+    .needle {
+      width: 4px;
+      height: 150px;
+      background: red;
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform-origin: bottom;
+      transform: rotate(0deg);
+    }
+    .label {
+      margin-top: 1em;
+      font-size: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Open Wind: Mast Rotation Gauge</h1>
+  <div class="gauge-container">
+    <div id="needle" class="needle"></div>
+  </div>
+  <div class="label">
+    Mast Rotation: <span id="rotationDeg">--</span>°<br>
+    Calibration Offset: <span id="offsetDeg">--</span>°
+  </div>
+
+  <script>
+    const needle = document.getElementById('needle');
+    const rotationDegText = document.getElementById('rotationDeg');
+    const offsetDegText = document.getElementById('offsetDeg');
+
+    const client = new window.signalk.Client();
+    client.connect();
+
+    function radToDeg(rad) {
+      return (rad * 180 / Math.PI).toFixed(1);
+    }
+
+    client.onConnect = () => {
+      client.subscribe(
+        [
+          { path: 'sensors.mast.rotation', period: 1000 },
+          { path: 'plugin.open-wind.calibrationOffset', period: 1000 }
+        ],
+        (delta) => {
+          delta.updates.forEach(update => {
+            update.values.forEach(v => {
+              if (v.path === 'sensors.mast.rotation') {
+                const degrees = parseFloat(radToDeg(v.value));
+                needle.style.transform = `rotate(${degrees}deg)`;
+                rotationDegText.textContent = degrees;
+              }
+              if (v.path === 'plugin.open-wind.calibrationOffset') {
+                offsetDegText.textContent = radToDeg(v.value);
+              }
+            });
+          });
+        }
+      );
+    };
+  </script>
+</body>
+</html>
