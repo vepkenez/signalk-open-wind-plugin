@@ -1,6 +1,6 @@
 {
   "name": "signalk-open-wind-plugin",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Signal K plugin for integrating OpenWind sensor data",
   "keywords": [
     "signalk-node-server-plugin",
@@ -46,6 +46,7 @@
     "plugin/",
     "public/",
     "install.sh",
+    "install-python-deps.sh",
     "README.md",
     "LICENSE"
   ]

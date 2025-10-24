@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2024-01-XX
+
+### Fixed
+- Fixed missing install-python-deps.sh script in npm package
+- Added install-python-deps.sh to package.json files array
+- Ensured script is included in npm distribution
+
 ## [1.0.2] - 2024-01-XX
 
 ### Fixed
