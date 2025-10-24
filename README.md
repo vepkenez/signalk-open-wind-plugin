@@ -29,7 +29,8 @@ A robust Signal K plugin for integrating OpenWind sensor data with automatic rei
 
 - **Wind Data Integration**: Processes apparent wind speed and angle from OpenWind sensor
 - **Mast Rotation Compensation**: Determines mast rotation via OpenWind Yaw data
-- Uses available NMEA2000 boat heading to determine mast rotation value
+- Subtracts mast yaw from available NMEA2000 boat heading to output mast rotation compensated wind data
+- use existing SignalK facilities to send wind data to N2K network.
 - **Debug Data**: Comprehensive debug information for monitoring and troubleshooting
 - **Auto-Reinstallation**: Survives Signal K server updates automatically
 
