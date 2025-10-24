@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2024-01-XX
+
+### Fixed
+- Fixed Python installation for externally managed environments (Ubuntu/Debian)
+- Added support for --break-system-packages and --user flags
+- Enhanced error handling with multiple fallback installation methods
+- Improved documentation for Python installation troubleshooting
+
+### Added
+- Smart Python dependency installation with multiple fallback methods
+- Better error messages and user guidance for Python installation issues
+- Comprehensive troubleshooting guide for externally managed Python environments
+
 ## [1.0.1] - 2024-01-XX
 
 ### Fixed
