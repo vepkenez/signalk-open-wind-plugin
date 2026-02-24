@@ -188,28 +188,36 @@ The automatic reinstallation system should handle this, but if issues persist:
 ```
 signalk-open-wind-plugin/
 ├── plugin/
-│   ├── index.js          # Main plugin code
-│   └── OpenWind.py       # Python data processor
+│   ├── index.js              # Main plugin code
+│   └── OpenWind.py           # BLE → UDP bridge (Python/bleak)
 ├── public/
-│   └── index.html        # Web interface
-├── package.json          # Plugin metadata
-├── install.sh           # Installation script
-└── README.md            # This file
+│   └── index.html            # Web dashboard
+├── package.json              # Plugin metadata
+├── install.sh                # Optional post-install setup (npm run setup)
+├── install-python-deps.sh    # Python dependency installer (runs on postinstall)
+├── test-docker.sh            # Docker integration test
+└── README.md
 ```
 
 ### Testing
 
-Test the plugin installation:
+The project includes a Docker-based integration test that spins up a clean SignalK server, installs the plugin, and verifies everything works. Requires Docker.
+
 ```bash
-# Remove plugin to simulate server update
-rm ~/.signalk/node_modules/open-wind
-
-# Start server (should auto-reinstall)
-~/.signalk/signalk-server
-
-# Verify plugin is working
-curl http://localhost:3000/signalk/v1/api/vessels/self | grep open-wind
+npm test
+# or
+./test-docker.sh
 ```
+
+The test will:
+1. Start a fresh SignalK server container
+2. Install the plugin via `npm install`
+3. Enable the plugin and restart
+4. Verify all Signal K data paths are publishing
+5. Verify the webapp is served at `/open-wind`
+6. Clean up the container
+
+The full run takes about a minute.
 
 ## License
 

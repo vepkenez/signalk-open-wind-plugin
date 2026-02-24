@@ -20,7 +20,7 @@
   "scripts": {
     "postinstall": "./install-python-deps.sh",
     "setup": "./install.sh",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "./test-docker.sh"
   },
   "repository": {
     "type": "git",
