@@ -15,6 +15,71 @@ module.exports = function(app) {
   
   // Python process for OpenWind
   let pythonProcess = null
+  
+  async function checkSignalKRemote(host, port = 3000, timeout = 5000) {
+    const http = require('http')
+    const https = require('https')
+    
+    return new Promise((resolve) => {
+      const protocol = port === 443 ? https : http
+      
+      const options = {
+        hostname: host,
+        port: port,
+        path: '/signalk/v1/api/',
+        method: 'GET',
+        timeout: timeout
+      }
+      
+      const req = protocol.request(options, (res) => {
+        let data = ''
+        res.on('data', (chunk) => {
+          data += chunk
+        })
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data)
+            resolve({
+              running: true,
+              version: json.version || 'unknown',
+              statusCode: res.statusCode,
+              host: host,
+              port: port
+            })
+          } catch (e) {
+            resolve({
+              running: res.statusCode < 500,
+              statusCode: res.statusCode,
+              host: host,
+              port: port,
+              error: 'Invalid JSON response'
+            })
+          }
+        })
+      })
+      
+      req.on('error', (err) => {
+        resolve({
+          running: false,
+          host: host,
+          port: port,
+          error: err.message
+        })
+      })
+      
+      req.on('timeout', () => {
+        req.destroy()
+        resolve({
+          running: false,
+          host: host,
+          port: port,
+          error: 'Connection timeout'
+        })
+      })
+      
+      req.end()
+    })
+  }
 
   return {
     "id": "open-wind",
@@ -29,8 +94,65 @@ module.exports = function(app) {
       yawOffset = (options.yawOffset || 0) * Math.PI / 180
 
       // Register webapp routes
+      const path = require('path')
+      const indexPath = path.join(__dirname, '..', 'public', 'index.html')
+      
       app.get('/open-wind', (req, res) => {
-        res.sendFile(__dirname + '/../public/index.html')
+        res.sendFile(indexPath, (err) => {
+          if (err) {
+            console.error('Error serving index.html:', err)
+            res.status(500).send('Error loading webapp')
+          }
+        })
+      })
+      
+      app.get('/open-wind/', (req, res) => {
+        res.sendFile(indexPath, (err) => {
+          if (err) {
+            console.error('Error serving index.html:', err)
+            res.status(500).send('Error loading webapp')
+          }
+        })
+      })
+      
+      // API endpoint to check if SignalK is running on a remote server
+      app.get('/open-wind/check-signalk', async (req, res) => {
+        const host = req.query.host || 'localhost'
+        const port = parseInt(req.query.port) || 3000
+        const timeout = parseInt(req.query.timeout) || 5000
+        
+        try {
+          const result = await checkSignalKRemote(host, port, timeout)
+          res.json(result)
+        } catch (error) {
+          res.status(500).json({
+            running: false,
+            host: host,
+            port: port,
+            error: error.message
+          })
+        }
+      })
+      
+      // API endpoint to check local SignalK server status
+      app.get('/open-wind/check-local-signalk', (req, res) => {
+        try {
+          const selfId = app.selfId || 'unknown'
+          const version = app.version || 'unknown'
+          
+          res.json({
+            running: true,
+            version: version,
+            selfId: selfId,
+            host: 'localhost',
+            message: 'SignalK server is running (plugin is active)'
+          })
+        } catch (error) {
+          res.status(500).json({
+            running: false,
+            error: error.message
+          })
+        }
       })
       
       // UDP listener for OpenWind data
@@ -161,6 +283,14 @@ module.exports = function(app) {
                   meta: {
                     units: 'rad',
                     description: 'Raw sensor yaw value'
+                  }
+                },
+                {
+                  path: 'sensors.mast.rotation',
+                  value: mastRotation,
+                  meta: {
+                    units: 'rad',
+                    description: 'Mast rotation relative to boat forward'
                   }
                 },
                 { 

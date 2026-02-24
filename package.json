@@ -4,6 +4,8 @@
   "description": "Signal K plugin for integrating OpenWind sensor data",
   "keywords": [
     "signalk-node-server-plugin",
+    "signalk-webapp",
+    "signalk-category-instruments",
     "wind",
     "sailing",
     "nmea2000",
