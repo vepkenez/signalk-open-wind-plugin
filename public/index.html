@@ -3,842 +3,648 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Open Wind: Wind & Mast Display</title>
-  <!-- Load SignalK client library - try multiple sources -->
+  <title>Open Wind Display</title>
   <script>
     (function() {
-      // Try multiple CDN sources in order
       const cdnSources = [
         'https://unpkg.com/@signalk/client@1.1.0/dist/signalk-client.min.js',
         'https://cdn.jsdelivr.net/npm/@signalk/client@1.1.0/dist/signalk-client.min.js',
         'https://cdn.skypack.dev/@signalk/client@1.1.0'
       ];
-      
       let currentSourceIndex = 0;
-      
       function tryLoadScript() {
         if (currentSourceIndex >= cdnSources.length) {
-          console.error('All CDN sources failed. Trying to use WebSocket directly...');
-          // Fallback: try to connect directly via WebSocket
           window.dispatchEvent(new Event('signalk-client-error'));
           return;
         }
-        
         const script = document.createElement('script');
         script.src = cdnSources[currentSourceIndex];
         script.async = true;
-        
         script.onload = function() {
-          console.log('SignalK client script loaded from:', cdnSources[currentSourceIndex]);
-          // Trigger initialization check after a short delay
           setTimeout(function() {
             if (typeof window.signalk !== 'undefined' && window.signalk.Client) {
-              console.log('SignalK client library is available');
               window.dispatchEvent(new Event('signalk-client-loaded'));
             } else if (typeof window.SignalK !== 'undefined' && window.SignalK.Client) {
-              console.log('SignalK client library is available (alternative namespace)');
               window.dispatchEvent(new Event('signalk-client-loaded'));
             } else {
-              console.error('Script loaded but SignalK client not found in window object');
-              // Try next source
               currentSourceIndex++;
               tryLoadScript();
             }
           }, 100);
         };
-        
         script.onerror = function() {
-          console.warn('Failed to load from:', cdnSources[currentSourceIndex]);
           currentSourceIndex++;
           tryLoadScript();
         };
-        
         document.head.appendChild(script);
       }
-      
       tryLoadScript();
     })();
   </script>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a2e;
       min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       padding: 20px;
-      color: #333;
+      color: #e0e0e0;
     }
 
     .container {
-      max-width: 1400px;
-      margin: 0 auto;
+      max-width: 600px;
+      width: 100%;
     }
 
     h1 {
       text-align: center;
-      color: white;
-      margin-bottom: 30px;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-      font-size: 2.5em;
-    }
-
-    .dashboard {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 30px;
-      margin-bottom: 30px;
+      color: #e0e0e0;
+      margin-bottom: 20px;
+      font-size: 1.8em;
+      font-weight: 300;
+      letter-spacing: 2px;
     }
 
     .panel {
-      background: white;
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      background: #16213e;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
       display: flex;
       flex-direction: column;
       align-items: center;
     }
 
-    .panel-title {
-      font-size: 1.5em;
-      font-weight: bold;
-      margin-bottom: 20px;
-      color: #667eea;
-      text-align: center;
+    /* Toggle switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 0.85em;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #8899aa;
     }
-
-    /* Wind Direction Compass */
-    .compass-container {
-      width: 300px;
-      height: 300px;
+    .toggle-row .active { color: #64ffda; font-weight: 600; }
+    .toggle-switch {
       position: relative;
-      margin: 20px auto;
+      width: 48px;
+      height: 26px;
     }
-
-    .compass-face {
-      width: 100%;
-      height: 100%;
-      border: 8px solid #333;
-      border-radius: 50%;
-      background: radial-gradient(circle, #f0f0f0 0%, #e0e0e0 100%);
-      position: relative;
-      box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
-    }
-
-    .compass-markers {
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
       position: absolute;
-      width: 100%;
-      height: 100%;
-      top: 0;
-      left: 0;
+      inset: 0;
+      background: #2a3a5c;
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.3s;
     }
-
-    .compass-marker {
-      position: absolute;
-      width: 3px;
-      height: 20px;
-      background: #333;
-      left: 50%;
-      top: 0;
-      transform-origin: bottom center;
-      transform: translateX(-50%);
-    }
-
-    .compass-marker.major {
-      width: 4px;
-      height: 30px;
-      background: #000;
-    }
-
-    .compass-label {
-      position: absolute;
-      font-size: 14px;
-      font-weight: bold;
-      color: #333;
-      transform: translate(-50%, -50%);
-    }
-
-    .wind-arrow {
-      position: absolute;
-      width: 8px;
-      height: 120px;
-      background: linear-gradient(to bottom, #4CAF50 0%, #8BC34A 100%);
-      left: 50%;
-      top: 50%;
-      transform-origin: bottom center;
-      transform: translateX(-50%) translateY(-100%) rotate(0deg);
-      border-radius: 4px 4px 0 0;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-      z-index: 10;
-    }
-
-    .wind-arrow::after {
+    .toggle-slider::before {
       content: '';
-      position: absolute;
-      bottom: -10px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 0;
-      height: 0;
-      border-left: 6px solid transparent;
-      border-right: 6px solid transparent;
-      border-top: 10px solid #4CAF50;
-    }
-
-    .compass-center {
-      position: absolute;
-      width: 30px;
-      height: 30px;
-      background: #333;
-      border-radius: 50%;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 15;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-    }
-
-    /* Mast Rotation Indicator */
-    .mast-container {
-      width: 200px;
-      height: 400px;
-      position: relative;
-      margin: 20px auto;
-      background: linear-gradient(to bottom, #87CEEB 0%, #4682B4 100%);
-      border-radius: 10px;
-      box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
-    }
-
-    .mast {
       position: absolute;
       width: 20px;
-      height: 350px;
-      background: linear-gradient(to right, #8B7355 0%, #A0826D 50%, #8B7355 100%);
-      left: 50%;
-      top: 20px;
-      transform-origin: center bottom;
-      transform: translateX(-50%) rotate(0deg);
-      border-radius: 10px;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-      transition: transform 0.3s ease-out;
-      z-index: 5;
-    }
-
-    .mast::before {
-      content: '';
-      position: absolute;
-      width: 30px;
-      height: 30px;
-      background: #FFD700;
+      height: 20px;
+      left: 3px;
+      bottom: 3px;
+      background: #64ffda;
       border-radius: 50%;
-      top: -15px;
-      left: 50%;
-      transform: translateX(-50%);
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      transition: transform 0.3s;
+    }
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(22px);
     }
 
-    .mast-base {
-      position: absolute;
-      width: 60px;
-      height: 40px;
-      background: #654321;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      border-radius: 5px;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+    /* SVG compass */
+    .compass-wrap {
+      width: 100%;
+      max-width: 460px;
+      aspect-ratio: 1;
+      position: relative;
     }
-
-    .rotation-scale {
-      position: absolute;
+    .compass-wrap svg {
       width: 100%;
       height: 100%;
-      top: 0;
-      left: 0;
     }
 
-    .scale-mark {
-      position: absolute;
-      width: 2px;
-      height: 15px;
-      background: rgba(255,255,255,0.7);
-      left: 50%;
-      transform-origin: bottom center;
-      transform: translateX(-50%);
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin: 14px 0 8px;
+      font-size: 0.78em;
+      color: #8899aa;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 4px;
+      border-radius: 2px;
+    }
+    .legend-swatch.dashed {
+      background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px);
+      height: 3px;
     }
 
-    .scale-mark.major {
-      width: 3px;
-      height: 25px;
-      background: rgba(255,255,255,0.9);
-    }
-
-    /* Data Display */
+    /* Data readout grid */
     .data-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 10px;
       width: 100%;
-      margin-top: 20px;
+      margin-top: 16px;
     }
-
     .data-item {
-      background: #f8f9fa;
-      padding: 15px;
+      background: #1a1a2e;
+      padding: 12px 8px;
       border-radius: 10px;
       text-align: center;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
-
     .data-label {
-      font-size: 0.9em;
-      color: #666;
-      margin-bottom: 5px;
+      font-size: 0.7em;
+      color: #667;
+      margin-bottom: 4px;
       text-transform: uppercase;
       letter-spacing: 1px;
     }
-
     .data-value {
-      font-size: 2em;
-      font-weight: bold;
-      color: #333;
+      font-size: 1.5em;
+      font-weight: 700;
+      color: #e0e0e0;
+      font-variant-numeric: tabular-nums;
     }
-
     .data-unit {
-      font-size: 0.6em;
-      color: #999;
-      margin-left: 5px;
+      font-size: 0.5em;
+      color: #556;
+      margin-left: 2px;
     }
 
-    .status-indicator {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      margin-right: 8px;
-      background: #ccc;
-    }
-
-    .status-indicator.connected {
-      background: #4CAF50;
-      box-shadow: 0 0 10px #4CAF50;
-    }
-
-    .status-indicator.disconnected {
-      background: #f44336;
-    }
-
+    /* Status bar */
     .status-bar {
-      background: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 14px;
+      padding: 10px 16px;
+      background: #16213e;
       border-radius: 10px;
-      padding: 15px 30px;
-      text-align: center;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-      margin-top: 20px;
+      font-size: 0.78em;
+      color: #556;
     }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .status-dot.green  { background: #4CAF50; box-shadow: 0 0 6px #4CAF50; }
+    .status-dot.red    { background: #f44336; }
+    .status-dot.yellow { background: #ff9800; box-shadow: 0 0 4px #ff9800; }
+    .status-dot.grey   { background: #555; }
 
-    @media (max-width: 768px) {
-      .dashboard {
-        grid-template-columns: 1fr;
-      }
-      
-      .compass-container, .mast-container {
-        width: 250px;
-        height: 250px;
-      }
-      
-      .mast-container {
-        height: 350px;
-      }
+    @media (max-width: 480px) {
+      .compass-wrap { max-width: 340px; }
+      .data-grid { grid-template-columns: repeat(3, 1fr); }
+      .data-value { font-size: 1.2em; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🌊 Open Wind Display</h1>
-    
-    <div class="dashboard">
-      <!-- Wind Direction Panel -->
-      <div class="panel">
-        <div class="panel-title">Wind Direction</div>
-        <div class="compass-container">
-          <div class="compass-face">
-            <div class="compass-markers" id="compassMarkers"></div>
-            <div class="wind-arrow" id="windArrow"></div>
-            <div class="compass-center"></div>
-          </div>
-        </div>
-        <div class="data-grid">
-          <div class="data-item">
-            <div class="data-label">Wind Angle</div>
-            <div class="data-value">
-              <span id="windAngle">--</span>
-              <span class="data-unit">°</span>
-            </div>
-          </div>
-          <div class="data-item">
-            <div class="data-label">Wind Speed</div>
-            <div class="data-value">
-              <span id="windSpeed">--</span>
-              <span class="data-unit">kts</span>
-            </div>
-          </div>
-        </div>
-      </div>
+<div class="container">
+  <h1>Open Wind</h1>
 
-      <!-- Mast Rotation Panel -->
-      <div class="panel">
-        <div class="panel-title">Mast Rotation</div>
-        <div class="mast-container">
-          <div class="rotation-scale" id="rotationScale"></div>
-          <div class="mast" id="mast"></div>
-          <div class="mast-base"></div>
-        </div>
-        <div class="data-grid">
-          <div class="data-item">
-            <div class="data-label">Rotation</div>
-            <div class="data-value">
-              <span id="mastRotation">--</span>
-              <span class="data-unit">°</span>
-            </div>
-          </div>
-          <div class="data-item">
-            <div class="data-label">Sensor Yaw</div>
-            <div class="data-value">
-              <span id="sensorYaw">--</span>
-              <span class="data-unit">°</span>
-            </div>
-          </div>
-        </div>
-      </div>
+  <div class="panel">
+    <div class="toggle-row">
+      <span id="labelGlobal" class="active">Global</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="modeToggle">
+        <span class="toggle-slider"></span>
+      </label>
+      <span id="labelBoat">Boat Relative</span>
     </div>
 
-    <div class="status-bar">
-      <span class="status-indicator disconnected" id="statusIndicator"></span>
-      <span id="statusText">Connecting to SignalK...</span>
+    <div class="compass-wrap">
+      <svg viewBox="-200 -200 400 400" id="compassSvg">
+        <defs>
+          <marker id="arrowHead" markerWidth="10" markerHeight="8" refX="5" refY="4" orient="auto">
+            <path d="M0,0 L10,4 L0,8 Z" fill="#4CAF50"/>
+          </marker>
+        </defs>
+
+        <!-- Compass face -->
+        <circle cx="0" cy="0" r="190" fill="#0f1a30" stroke="#2a3a5c" stroke-width="3"/>
+
+        <!-- Compass rose: ticks + labels (rotated as a group) -->
+        <g id="compassRose"></g>
+
+        <!-- Sensor yaw line (orange dashed) -->
+        <line id="sensorYawLine" x1="0" y1="0" x2="0" y2="-180"
+              stroke="#ff9800" stroke-width="2" stroke-dasharray="6,4" opacity="0.7"/>
+
+        <!-- Wind arrow (green) -->
+        <g id="windArrowG">
+          <line x1="0" y1="0" x2="0" y2="-170" stroke="#4CAF50" stroke-width="4" stroke-linecap="round"/>
+          <polygon points="0,-182 -7,-166 7,-166" fill="#4CAF50"/>
+        </g>
+
+        <!-- Boat shape group (hull + mast cross) -->
+        <g id="boatGroup">
+          <path d="M 0,-38 C 10,-35 16,-18 16,8 L 14,26 Q 0,36 -14,26 L -16,8 C -16,-18 -10,-35 0,-38 Z"
+                fill="none" stroke="#8899aa" stroke-width="2.5" stroke-linejoin="round"/>
+          <!-- Centerline -->
+          <line x1="0" y1="-30" x2="0" y2="28" stroke="#8899aa" stroke-width="0.8" opacity="0.4"/>
+          <!-- Mast cross -->
+          <g id="mastCross">
+            <line x1="0" y1="-14" x2="0" y2="14" stroke="#ff5252" stroke-width="3" stroke-linecap="round"/>
+            <line x1="-14" y1="0" x2="14" y2="0" stroke="#ff5252" stroke-width="3" stroke-linecap="round"/>
+          </g>
+        </g>
+
+        <!-- Center dot -->
+        <circle cx="0" cy="0" r="4" fill="#64ffda"/>
+      </svg>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="legend-swatch" style="background:#8899aa"></span>Boat / Heading</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#ff5252"></span>Mast Rotation</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#4CAF50"></span>Apparent Wind</span>
+      <span class="legend-item"><span class="legend-swatch dashed" style="color:#ff9800"></span>Sensor Yaw</span>
+    </div>
+
+    <div class="data-grid">
+      <div class="data-item">
+        <div class="data-label">Heading</div>
+        <div class="data-value"><span id="valHeading">--</span><span class="data-unit">&deg;</span></div>
+      </div>
+      <div class="data-item">
+        <div class="data-label">Sensor Yaw</div>
+        <div class="data-value"><span id="valSensorYaw">--</span><span class="data-unit">&deg;</span></div>
+      </div>
+      <div class="data-item">
+        <div class="data-label">Mast Rot.</div>
+        <div class="data-value"><span id="valMastRot">--</span><span class="data-unit">&deg;</span></div>
+      </div>
+      <div class="data-item">
+        <div class="data-label">AWA</div>
+        <div class="data-value"><span id="valAWA">--</span><span class="data-unit">&deg;</span></div>
+      </div>
+      <div class="data-item">
+        <div class="data-label">Wind Speed</div>
+        <div class="data-value"><span id="valWindSpeed">--</span><span class="data-unit">kts</span></div>
+      </div>
     </div>
   </div>
 
-  <script>
-    // Wait for SignalK client library to load
-    let client;
-    let statusIndicator, statusText;
-    
-    // Update status function - available early
-    function updateStatus(connected) {
-      if (!statusIndicator) statusIndicator = document.getElementById('statusIndicator');
-      if (!statusText) statusText = document.getElementById('statusText');
-      if (statusIndicator && statusText) {
-        if (connected) {
-          statusIndicator.className = 'status-indicator connected';
-          statusText.textContent = 'Connected to SignalK';
-        } else {
-          statusIndicator.className = 'status-indicator disconnected';
-          statusText.textContent = 'Disconnected from SignalK';
-        }
+  <div class="status-bar">
+    <span id="pluginVersion">Open Wind --</span>
+    <span id="bleStatus"><span class="status-dot grey"></span>BLE: --</span>
+    <span id="skStatus"><span class="status-dot red"></span>SignalK: Connecting</span>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────
+  let client;
+  let globalMode = true;
+
+  let heading = null;       // boat heading (rad, global)
+  let sensorYaw = null;     // sensor compass (rad, global)
+  let mastRotation = null;  // mast rot relative to boat (rad)
+  let windAngle = null;     // apparent wind angle, boat-relative (rad)
+  let windSpeed = null;     // m/s
+  let bleStatusVal = null;
+  let pluginVersionVal = null;
+
+  // ── DOM refs ───────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+
+  // ── Build compass rose (tick marks + labels) ───────────
+  function buildCompassRose() {
+    const g = $('compassRose');
+    const labels = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
+    for (let deg = 0; deg < 360; deg += 5) {
+      const isMajor = deg % 15 === 0;
+      const r1 = isMajor ? 165 : 172;
+      const r2 = 188;
+      const rad = deg * Math.PI / 180;
+      const x1 = r1 * Math.sin(rad), y1 = -r1 * Math.cos(rad);
+      const x2 = r2 * Math.sin(rad), y2 = -r2 * Math.cos(rad);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('stroke', isMajor ? '#5a6a8a' : '#3a4a6a');
+      line.setAttribute('stroke-width', isMajor ? '2' : '1');
+      g.appendChild(line);
+
+      if (labels[deg] !== undefined) {
+        const lr = 150;
+        const tx = lr * Math.sin(rad), ty = -lr * Math.cos(rad);
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('x', tx); txt.setAttribute('y', ty);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('dominant-baseline', 'central');
+        txt.setAttribute('fill', deg === 0 ? '#ff5252' : '#8899aa');
+        txt.setAttribute('font-size', '18');
+        txt.setAttribute('font-weight', 'bold');
+        txt.textContent = labels[deg];
+        g.appendChild(txt);
       }
     }
-    
-    function initSignalKClient() {
-      // Check various possible ways the client library might be exposed
-      let ClientClass = null;
-      
-      // Try window.signalk.Client (most common)
-      if (typeof window.signalk !== 'undefined' && window.signalk.Client) {
-        ClientClass = window.signalk.Client;
-      }
-      // Try window.SignalK.Client
-      else if (typeof window.SignalK !== 'undefined' && window.SignalK.Client) {
-        ClientClass = window.SignalK.Client;
-      }
-      // Try direct window.Client (unlikely but possible)
-      else if (typeof window.Client !== 'undefined') {
-        ClientClass = window.Client;
-      }
-      // Try @signalk/client default export
-      else if (typeof signalk !== 'undefined' && signalk.Client) {
-        ClientClass = signalk.Client;
-      }
-      
-      if (ClientClass) {
-        try {
-          client = new ClientClass();
-          console.log('SignalK client initialized successfully');
-          startApp();
-        } catch (error) {
-          console.error('Error creating SignalK client:', error);
-          updateStatus(false);
-          const st = document.getElementById('statusText');
-          if (st) st.textContent = 'Error initializing SignalK client: ' + error.message;
-        }
+  }
+
+  // ── Helpers ────────────────────────────────────────────
+  function rad2deg(r) { return r * 180 / Math.PI; }
+  function normDeg(d) { return ((d % 360) + 360) % 360; }
+  function fmtAngle(rad, signed) {
+    if (rad === null) return '--';
+    let d = rad2deg(rad);
+    if (signed) {
+      if (d > 180) d -= 360;
+      return (d >= 0 ? '+' : '') + d.toFixed(1);
+    }
+    return normDeg(d).toFixed(1);
+  }
+
+  // ── Display update ─────────────────────────────────────
+  function updateDisplay() {
+    const rose = $('compassRose');
+    const boat = $('boatGroup');
+    const cross = $('mastCross');
+    const arrow = $('windArrowG');
+    const yawLine = $('sensorYawLine');
+
+    const hDeg = heading !== null ? normDeg(rad2deg(heading)) : 0;
+    const hasHeading = heading !== null;
+
+    if (globalMode) {
+      // N at top: rose fixed, boat rotates to heading
+      rose.setAttribute('transform', '');
+      boat.setAttribute('transform', hasHeading ? `rotate(${hDeg})` : '');
+      if (windAngle !== null && hasHeading) {
+        const globalWind = hDeg + rad2deg(windAngle);
+        arrow.setAttribute('transform', `rotate(${normDeg(globalWind)})`);
+        arrow.setAttribute('opacity', '1');
       } else {
-        // Debug: log what's actually available
-        const signalKeys = Object.keys(window).filter(k => 
-          k.toLowerCase().includes('signal') || 
-          k.toLowerCase().includes('client') ||
-          k === 'signalk' || k === 'SignalK'
-        );
-        console.error('SignalK client library not found. Available relevant globals:', signalKeys);
-        console.log('window.signalk:', typeof window.signalk, window.signalk);
-        console.log('window.SignalK:', typeof window.SignalK, window.SignalK);
-        updateStatus(false);
-        const st = document.getElementById('statusText');
-        if (st) st.textContent = 'SignalK client library failed to load. Check console for details.';
+        arrow.setAttribute('opacity', '0.2');
+      }
+      if (sensorYaw !== null) {
+        yawLine.setAttribute('transform', `rotate(${normDeg(rad2deg(sensorYaw))})`);
+        yawLine.setAttribute('opacity', '0.7');
+      } else {
+        yawLine.setAttribute('opacity', '0.15');
+      }
+    } else {
+      // Bow at top: boat fixed, rose counter-rotates
+      rose.setAttribute('transform', hasHeading ? `rotate(${-hDeg})` : '');
+      boat.setAttribute('transform', '');
+      if (windAngle !== null) {
+        arrow.setAttribute('transform', `rotate(${normDeg(rad2deg(windAngle))})`);
+        arrow.setAttribute('opacity', '1');
+      } else {
+        arrow.setAttribute('opacity', '0.2');
+      }
+      if (sensorYaw !== null && hasHeading) {
+        const relYaw = rad2deg(sensorYaw) - hDeg;
+        yawLine.setAttribute('transform', `rotate(${normDeg(relYaw)})`);
+        yawLine.setAttribute('opacity', '0.7');
+      } else {
+        yawLine.setAttribute('opacity', '0.15');
       }
     }
-    
-    // DOM element references - need to be accessible to all functions
-    let windArrow, windAngle, windSpeed, mast, mastRotation, sensorYaw;
-    
-    function updateWindDisplay(angleRad, speedMs) {
-      if (!windArrow || !windAngle || !windSpeed) {
-        windArrow = document.getElementById('windArrow');
-        windAngle = document.getElementById('windAngle');
-        windSpeed = document.getElementById('windSpeed');
-      }
-      if (!windArrow || !windAngle || !windSpeed) return;
-      
-      // Convert angle to degrees (0-360, where 0 is bow, 180 is stern)
-      // SignalK uses radians where 0 is bow, positive is starboard
-      let angleDeg = parseFloat((angleRad * 180 / Math.PI).toFixed(1));
-      
-      // Normalize to 0-360
-      if (angleDeg < 0) angleDeg += 360;
-      
-      // Rotate arrow to show wind direction (wind comes FROM this direction)
-      windArrow.style.transform = `translateX(-50%) translateY(-100%) rotate(${angleDeg}deg)`;
-      windAngle.textContent = angleDeg.toFixed(1);
-      
-      // Convert m/s to knots
-      const speedKnots = (speedMs * 1.943844).toFixed(1);
-      windSpeed.textContent = speedKnots;
+
+    // Mast cross always rotates relative to boat
+    if (mastRotation !== null) {
+      cross.setAttribute('transform', `rotate(${rad2deg(mastRotation)})`);
     }
 
-    function updateMastDisplay(rotationRad, yawRad) {
-      if (!mast || !mastRotation || !sensorYaw) {
-        mast = document.getElementById('mast');
-        mastRotation = document.getElementById('mastRotation');
-        sensorYaw = document.getElementById('sensorYaw');
-      }
-      if (!mast || !mastRotation || !sensorYaw) return;
-      
-      const rotationDeg = parseFloat((rotationRad * 180 / Math.PI).toFixed(1));
-      const yawDeg = parseFloat((yawRad * 180 / Math.PI).toFixed(1));
-      
-      // Rotate mast (positive rotation = starboard, negative = port)
-      mast.style.transform = `translateX(-50%) rotate(${rotationDeg}deg)`;
-      mastRotation.textContent = rotationDeg.toFixed(1);
-      sensorYaw.textContent = yawDeg.toFixed(1);
+    // Numeric readout
+    $('valHeading').textContent = heading !== null ? normDeg(rad2deg(heading)).toFixed(1) : '--';
+    $('valSensorYaw').textContent = sensorYaw !== null ? normDeg(rad2deg(sensorYaw)).toFixed(1) : '--';
+    $('valMastRot').textContent = fmtAngle(mastRotation, true);
+    $('valAWA').textContent = fmtAngle(windAngle, true);
+    $('valWindSpeed').textContent = windSpeed !== null ? (windSpeed * 1.943844).toFixed(1) : '--';
+  }
+
+  // ── Toggle ─────────────────────────────────────────────
+  function initToggle() {
+    const toggle = $('modeToggle');
+    const labelG = $('labelGlobal');
+    const labelB = $('labelBoat');
+    toggle.addEventListener('change', () => {
+      globalMode = !toggle.checked;
+      labelG.className = globalMode ? 'active' : '';
+      labelB.className = globalMode ? '' : 'active';
+      updateDisplay();
+    });
+  }
+
+  // ── Status helpers ─────────────────────────────────────
+  function updateSkStatus(connected) {
+    const el = $('skStatus');
+    if (connected) {
+      el.innerHTML = '<span class="status-dot green"></span>SignalK: Connected';
+    } else {
+      el.innerHTML = '<span class="status-dot red"></span>SignalK: Disconnected';
     }
+  }
 
-    // Handle delta updates (used by both full client and minimal client)
-    // Must be defined at top level so both startApp and createMinimalClient can access it
-    function handleDelta(delta) {
-      let currentWindAngle = null;
-      let currentWindSpeed = null;
-      let currentMastRotation = null;
-      let currentSensorYaw = null;
-      
-      if (!delta || !delta.updates) return;
-      
-      delta.updates.forEach(update => {
-        if (!update.values) return;
-        update.values.forEach(v => {
-          // Handle wind angle (radians)
-          if (v.path === 'environment.wind.angleApparent') {
-            currentWindAngle = v.value;
-            if (currentWindSpeed !== null) {
-              updateWindDisplay(currentWindAngle, currentWindSpeed);
-            }
-          }
-          // Handle wind angle (degrees - debug path)
-          else if (v.path === 'debug-awa-degrees') {
-            currentWindAngle = v.value * Math.PI / 180;
-            if (currentWindSpeed !== null) {
-              updateWindDisplay(currentWindAngle, currentWindSpeed);
-            }
-          }
-          // Handle wind speed (m/s)
-          else if (v.path === 'environment.wind.speedApparent') {
-            currentWindSpeed = v.value;
-            if (currentWindAngle !== null) {
-              updateWindDisplay(currentWindAngle, currentWindSpeed);
-            }
-          }
-          // Handle wind speed (knots - debug path)
-          else if (v.path === 'debug-wind-speed-knots') {
-            currentWindSpeed = v.value / 1.943844; // Convert knots to m/s
-            if (currentWindAngle !== null) {
-              updateWindDisplay(currentWindAngle, currentWindSpeed);
-            }
-          }
-          // Handle mast rotation (radians)
-          else if (v.path === 'sensors.mast.rotation') {
-            currentMastRotation = v.value;
-            if (currentSensorYaw !== null) {
-              updateMastDisplay(currentMastRotation, currentSensorYaw);
-            }
-          }
-          // Handle mast rotation (degrees - debug path)
-          else if (v.path === 'debug-mast-rotation-degrees') {
-            currentMastRotation = v.value * Math.PI / 180;
-            const yaw = currentSensorYaw !== null ? currentSensorYaw : currentMastRotation;
-            updateMastDisplay(currentMastRotation, yaw);
-          }
-          // Handle sensor yaw (radians)
-          else if (v.path === 'sensors.mast.yaw') {
-            currentSensorYaw = v.value;
-            if (currentMastRotation !== null) {
-              updateMastDisplay(currentMastRotation, currentSensorYaw);
-            }
-          }
-          // Handle sensor yaw (degrees - debug path)
-          else if (v.path === 'debug-sensor-yaw-degrees') {
-            currentSensorYaw = v.value * Math.PI / 180;
-            if (currentMastRotation !== null) {
-              updateMastDisplay(currentMastRotation, currentSensorYaw);
-            }
-          }
-        });
-      });
+  function updateBleStatusUI() {
+    const el = $('bleStatus');
+    if (!bleStatusVal) {
+      el.innerHTML = '<span class="status-dot grey"></span>BLE: --';
+      return;
     }
+    const map = {
+      connected:    { cls: 'green',  text: 'Connected' },
+      scanning:     { cls: 'yellow', text: 'Scanning...' },
+      disconnected: { cls: 'red',    text: 'Disconnected' },
+      not_found:    { cls: 'red',    text: 'Not Found' }
+    };
+    const s = map[bleStatusVal] || { cls: 'grey', text: bleStatusVal };
+    el.innerHTML = `<span class="status-dot ${s.cls}"></span>BLE: ${s.text}`;
+  }
 
-    function startApp() {
-    
-    // Get DOM elements (using top-level variables)
-    windArrow = document.getElementById('windArrow');
-    windAngle = document.getElementById('windAngle');
-    windSpeed = document.getElementById('windSpeed');
-    mast = document.getElementById('mast');
-    mastRotation = document.getElementById('mastRotation');
-    sensorYaw = document.getElementById('sensorYaw');
-    statusIndicator = document.getElementById('statusIndicator');
-    statusText = document.getElementById('statusText');
+  function updatePluginVersionUI() {
+    $('pluginVersion').textContent = pluginVersionVal ? `Open Wind v${pluginVersionVal}` : 'Open Wind --';
+  }
 
-    // Create compass markers
-    function createCompassMarkers() {
-      const markersContainer = document.getElementById('compassMarkers');
-      const labels = ['N', 'E', 'S', 'W'];
-      const positions = [0, 90, 180, 270];
-      
-      for (let i = 0; i < 360; i += 5) {
-        const marker = document.createElement('div');
-        marker.className = 'compass-marker' + (i % 15 === 0 ? ' major' : '');
-        marker.style.transform = `translateX(-50%) rotate(${i}deg)`;
-        markersContainer.appendChild(marker);
-        
-        if (i % 90 === 0) {
-          const label = document.createElement('div');
-          label.className = 'compass-label';
-          label.textContent = labels[i / 90];
-          label.style.top = '15px';
-          label.style.left = '50%';
-          label.style.transform = `translate(-50%, -50%) rotate(${-i}deg)`;
-          markersContainer.appendChild(label);
+  // ── Signal K delta handler ─────────────────────────────
+  function handleDelta(delta) {
+    if (!delta || !delta.updates) return;
+    let changed = false;
+
+    delta.updates.forEach(update => {
+      if (!update.values) return;
+      update.values.forEach(v => {
+        switch (v.path) {
+          case 'navigation.headingMagnetic':
+            heading = v.value; changed = true; break;
+          case 'environment.wind.angleApparent':
+            windAngle = v.value; changed = true; break;
+          case 'environment.wind.speedApparent':
+            windSpeed = v.value; changed = true; break;
+          case 'sensors.mast.rotation':
+            mastRotation = v.value; changed = true; break;
+          case 'sensors.mast.yaw':
+            sensorYaw = v.value; changed = true; break;
+          case 'sensors.openwind.bluetoothStatus':
+            bleStatusVal = v.value; updateBleStatusUI(); break;
+          case 'sensors.openwind.pluginVersion':
+            pluginVersionVal = v.value; updatePluginVersionUI(); break;
+          // Debug paths (degrees)
+          case 'debug-awa-degrees':
+            windAngle = v.value * Math.PI / 180; changed = true; break;
+          case 'debug-wind-speed-knots':
+            windSpeed = v.value / 1.943844; changed = true; break;
+          case 'debug-mast-rotation-degrees':
+            mastRotation = v.value * Math.PI / 180; changed = true; break;
+          case 'debug-sensor-yaw-degrees':
+            sensorYaw = v.value * Math.PI / 180; changed = true; break;
         }
-      }
-    }
+      });
+    });
 
-    // Create rotation scale markers
-    function createRotationScale() {
-      const scaleContainer = document.getElementById('rotationScale');
-      for (let i = -45; i <= 45; i += 5) {
-        const mark = document.createElement('div');
-        mark.className = 'scale-mark' + (i % 15 === 0 ? ' major' : '');
-        mark.style.bottom = '50%';
-        mark.style.transform = `translateX(-50%) rotate(${i}deg)`;
-        scaleContainer.appendChild(mark);
-      }
-    }
+    if (changed) updateDisplay();
+  }
 
+  // ── Signal K subscription list ─────────────────────────
+  const SUBSCRIBE_PATHS = [
+    { path: 'navigation.headingMagnetic', period: 200 },
+    { path: 'environment.wind.angleApparent', period: 100 },
+    { path: 'environment.wind.speedApparent', period: 100 },
+    { path: 'sensors.mast.rotation', period: 100 },
+    { path: 'sensors.mast.yaw', period: 100 },
+    { path: 'sensors.openwind.bluetoothStatus', period: 2000 },
+    { path: 'sensors.openwind.pluginVersion', period: 10000 },
+    { path: 'debug-awa-degrees', period: 100 },
+    { path: 'debug-wind-speed-knots', period: 100 },
+    { path: 'debug-mast-rotation-degrees', period: 100 },
+    { path: 'debug-sensor-yaw-degrees', period: 100 },
+  ];
 
-    // Initialize displays
-    createCompassMarkers();
-    createRotationScale();
+  // ── startApp (called after client is ready) ────────────
+  function startApp() {
+    buildCompassRose();
+    initToggle();
 
-    // Connect to SignalK
-    // The client will auto-detect the SignalK server from the current page's origin
     try {
       client.connect();
-      console.log('Attempting to connect to SignalK...');
     } catch (error) {
       console.error('Error connecting to SignalK:', error);
-      updateStatus(false);
+      updateSkStatus(false);
     }
 
-    // For full SignalK client library
     if (client && typeof client.onConnect === 'function') {
       client.onConnect = () => {
-        updateStatus(true);
-        console.log('Connected to SignalK');
-        
-        // Subscribe to all paths at once using the shared handleDelta function
-        client.subscribe(
-          [
-            { path: 'environment.wind.angleApparent', period: 100 },
-            { path: 'environment.wind.speedApparent', period: 100 },
-            { path: 'sensors.mast.rotation', period: 100 },
-            { path: 'sensors.mast.yaw', period: 100 },
-            { path: 'debug-awa-degrees', period: 100 },
-            { path: 'debug-wind-speed-knots', period: 100 },
-            { path: 'debug-mast-rotation-degrees', period: 100 },
-            { path: 'debug-sensor-yaw-degrees', period: 100 }
-          ],
-          handleDelta
-        );
+        updateSkStatus(true);
+        client.subscribe(SUBSCRIBE_PATHS, handleDelta);
       };
     }
+    client.onDisconnect = () => updateSkStatus(false);
+    client.onError = () => updateSkStatus(false);
+  }
 
-    client.onDisconnect = () => {
-      updateStatus(false);
-    };
-
-    client.onError = (error) => {
-      console.error('SignalK client error:', error);
-      updateStatus(false);
-    };
-    } // end of startApp function
-    
-    // Listen for script load events
-    window.addEventListener('signalk-client-loaded', function() {
-      console.log('Received signalk-client-loaded event');
-      initSignalKClient();
-    });
-    
-    window.addEventListener('signalk-client-error', function() {
-      console.error('Received signalk-client-error event');
-      // Try to create a minimal SignalK client using WebSocket directly
-      console.log('Attempting to create minimal SignalK client...');
-      createMinimalClient();
-    });
-    
-    // Minimal SignalK client implementation using WebSocket directly
-    function createMinimalClient() {
+  // ── Client initialisation ──────────────────────────────
+  function initSignalKClient() {
+    let ClientClass = null;
+    if (typeof window.signalk !== 'undefined' && window.signalk.Client) {
+      ClientClass = window.signalk.Client;
+    } else if (typeof window.SignalK !== 'undefined' && window.SignalK.Client) {
+      ClientClass = window.SignalK.Client;
+    } else if (typeof signalk !== 'undefined' && signalk.Client) {
+      ClientClass = signalk.Client;
+    }
+    if (ClientClass) {
       try {
-        // Get the current host and port
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsHost = window.location.host;
-        const wsUrl = `${wsProtocol}//${wsHost}/signalk/v1/stream`;
-        
-        console.log('Connecting to SignalK WebSocket:', wsUrl);
-        
-        // Create a minimal client-like object
-        const minimalClient = {
-          ws: null,
-          subscriptions: [],
-          connected: false,
-          
-          connect: function() {
-            try {
-              this.ws = new WebSocket(wsUrl);
-              
-              this.ws.onopen = () => {
-                console.log('WebSocket connected to SignalK');
-                this.connected = true;
-                updateStatus(true);
-                // Subscribe to all our paths
-                this.subscribe([
-                  { path: 'environment.wind.angleApparent', period: 100 },
-                  { path: 'environment.wind.speedApparent', period: 100 },
-                  { path: 'sensors.mast.rotation', period: 100 },
-                  { path: 'sensors.mast.yaw', period: 100 },
-                  { path: 'debug-awa-degrees', period: 100 },
-                  { path: 'debug-wind-speed-knots', period: 100 },
-                  { path: 'debug-mast-rotation-degrees', period: 100 },
-                  { path: 'debug-sensor-yaw-degrees', period: 100 }
-                ], handleDelta);
-              };
-              
-              this.ws.onmessage = (event) => {
-                try {
-                  const delta = JSON.parse(event.data);
-                  if (delta.updates) {
-                    handleDelta(delta);
-                  }
-                } catch (e) {
-                  console.error('Error parsing WebSocket message:', e);
-                }
-              };
-              
-              this.ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                updateStatus(false);
-              };
-              
-              this.ws.onclose = () => {
-                console.log('WebSocket closed');
-                this.connected = false;
-                updateStatus(false);
-                // Try to reconnect after 3 seconds
-                setTimeout(() => {
-                  if (!this.connected) {
-                    console.log('Attempting to reconnect...');
-                    this.connect();
-                  }
-                }, 3000);
-              };
-            } catch (error) {
-              console.error('Error creating WebSocket:', error);
-              updateStatus(false);
-            }
-          },
-          
-          subscribe: function(paths, callback) {
-            this.subscriptions.push({ paths, callback });
-            if (this.connected && this.ws) {
-              const subscribeMsg = {
-                context: 'vessels.self',
-                subscribe: paths.map(p => ({
-                  path: p.path,
-                  period: p.period || 1000
-                }))
-              };
-              this.ws.send(JSON.stringify(subscribeMsg));
-            }
-          }
-        };
-        
-        client = minimalClient;
-        client.connect();
+        client = new ClientClass();
         startApp();
-        
       } catch (error) {
-        console.error('Failed to create minimal client:', error);
-        updateStatus(false);
-        const st = document.getElementById('statusText');
-        if (st) st.textContent = 'SignalK client library failed to load and WebSocket fallback failed. Please check your internet connection.';
+        console.error('Error creating SignalK client:', error);
+        updateSkStatus(false);
       }
-    }
-    
-    
-    // Also try immediate initialization if library is already loaded
-    function tryInit() {
-      if (typeof window.signalk !== 'undefined' && window.signalk.Client) {
-        console.log('SignalK client already available, initializing immediately');
-        initSignalKClient();
-      } else if (typeof window.SignalK !== 'undefined' && window.SignalK.Client) {
-        console.log('SignalK client already available (alternative namespace), initializing immediately');
-        initSignalKClient();
-      } else {
-        // Wait a bit and try again, or wait for the event
-        setTimeout(() => {
-          if (!client) {
-            console.log('Still waiting for SignalK client library...');
-          }
-        }, 1000);
-      }
-    }
-    
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', tryInit);
     } else {
-      tryInit();
+      updateSkStatus(false);
     }
-  </script>
+  }
+
+  // ── Minimal WebSocket client (fallback) ────────────────
+  function createMinimalClient() {
+    try {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.host;
+      const wsUrl = `${wsProtocol}//${wsHost}/signalk/v1/stream`;
+
+      const minimalClient = {
+        ws: null,
+        connected: false,
+        connect: function() {
+          this.ws = new WebSocket(wsUrl);
+          this.ws.onopen = () => {
+            this.connected = true;
+            updateSkStatus(true);
+            this.subscribe(SUBSCRIBE_PATHS, handleDelta);
+          };
+          this.ws.onmessage = (event) => {
+            try {
+              const delta = JSON.parse(event.data);
+              if (delta.updates) handleDelta(delta);
+            } catch (e) {}
+          };
+          this.ws.onerror = () => updateSkStatus(false);
+          this.ws.onclose = () => {
+            this.connected = false;
+            updateSkStatus(false);
+            setTimeout(() => { if (!this.connected) this.connect(); }, 3000);
+          };
+        },
+        subscribe: function(paths, callback) {
+          if (this.connected && this.ws) {
+            this.ws.send(JSON.stringify({
+              context: 'vessels.self',
+              subscribe: paths.map(p => ({ path: p.path, period: p.period || 1000 }))
+            }));
+          }
+        }
+      };
+      client = minimalClient;
+      client.connect();
+      startApp();
+    } catch (error) {
+      console.error('Failed to create minimal client:', error);
+      updateSkStatus(false);
+    }
+  }
+
+  // ── Bootstrap ──────────────────────────────────────────
+  window.addEventListener('signalk-client-loaded', () => initSignalKClient());
+  window.addEventListener('signalk-client-error', () => createMinimalClient());
+
+  function tryInit() {
+    if (typeof window.signalk !== 'undefined' && window.signalk.Client) {
+      initSignalKClient();
+    } else if (typeof window.SignalK !== 'undefined' && window.SignalK.Client) {
+      initSignalKClient();
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryInit);
+  } else {
+    tryInit();
+  }
+</script>
 </body>
 </html>

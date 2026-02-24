@@ -183,6 +183,19 @@ The automatic reinstallation system should handle this, but if issues persist:
 
 ## Development
 
+### Live webapp development
+
+You can run Signal K in Docker and the webapp with hot reload so frontend changes appear immediately. The dev server (Vite) requires Node 18+.
+
+1. **Install dev dependency** (once): `npm install`
+2. **Start Signal K in Docker**: `npm run dev:docker`  
+   - Starts `signalk/signalk-server` with the plugin installed and enabled; config is persisted in a Docker volume.
+3. **Start the dev server**: `npm run dev`  
+   - Serves `public/` at http://localhost:5173/ with Vite and proxies `/signalk` (API + WebSocket) to the container.
+4. **Open** http://localhost:5173/ in your browser. Edit files in `public/` (e.g. `index.html`) and save; the page will reload automatically.
+
+To stop the container: `docker compose -f docker-compose.dev.yml down`.
+
 ### File Structure
 
 ```

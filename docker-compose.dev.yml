@@ -1,0 +1,34 @@
+# Live development: Signal K in Docker + local webapp with hot reload.
+# Usage:
+#   1. Start Signal K:  npm run dev:docker  (or docker compose -f docker-compose.dev.yml up -d)
+#   2. Start dev server: npm run dev
+#   3. Open http://localhost:5173/ and edit public/ — changes reload instantly.
+
+services:
+  signalk:
+    image: signalk/signalk-server:latest
+    container_name: signalk-open-wind-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - signalk-dev-data:/home/node/.signalk
+      - .:/plugin-source:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cd /home/node/.signalk
+        if [ ! -f node_modules/signalk-open-wind-plugin/plugin/index.js ]; then
+          echo "Installing plugin from /plugin-source..."
+          npm install /plugin-source
+        fi
+        mkdir -p plugin-config-data
+        if [ ! -f plugin-config-data/open-wind.json ]; then
+          echo '{"enabled":true,"enableLogging":false,"configuration":{"amplitude":10,"interval":1000,"yawOffset":0,"pythonPath":""}}' > plugin-config-data/open-wind.json
+        fi
+        exec /home/node/signalk/node_modules/.bin/signalk-server -c /home/node/.signalk
+    environment:
+      - NODE_ENV=development
+
+volumes:
+  signalk-dev-data:

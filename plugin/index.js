@@ -15,6 +15,8 @@ module.exports = function(app) {
   
   // Python process for OpenWind
   let pythonProcess = null
+  let bleStatus = 'disconnected'
+  const pluginVersion = require('../package.json').version
   
   async function checkSignalKRemote(host, port = 3000, timeout = 5000) {
     const http = require('http')
@@ -212,11 +214,15 @@ module.exports = function(app) {
         })
       
         pythonProcess.stdout.on('data', (data) => {
-          //console.log('OpenWind Python output:', data.toString().trim())
+          const line = data.toString().trim()
+          if (line.includes('Connected to OpenWind')) bleStatus = 'connected'
+          else if (line.includes('disconnected')) bleStatus = 'disconnected'
+          else if (line.includes('not found')) bleStatus = 'not_found'
+          else if (line.includes('Scanning')) bleStatus = 'scanning'
         })
       
         pythonProcess.stderr.on('data', (data) => {
-          //console.log('OpenWind Python error:', data.toString().trim())
+          // Python stderr (warnings, tracebacks)
         })
       
         pythonProcess.on('close', (code) => {
@@ -344,6 +350,14 @@ module.exports = function(app) {
                     units: 'deg',
                     description: 'Raw mast top sensor yaw value in degrees'
                   }
+                },
+                {
+                  path: 'sensors.openwind.bluetoothStatus',
+                  value: bleStatus
+                },
+                {
+                  path: 'sensors.openwind.pluginVersion',
+                  value: pluginVersion
                 }
               ]
             }
