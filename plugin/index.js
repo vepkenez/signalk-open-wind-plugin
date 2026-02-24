@@ -187,36 +187,48 @@ module.exports = function(app) {
       })
       
       // Spawn Python process for OpenWind
-      const { spawn } = require('child_process')
-      const pythonPath = __dirname + '/OpenWind.py'
+      const { spawn, execSync } = require('child_process')
+      const pythonScript = path.join(__dirname, 'OpenWind.py')
       
-      //console.log('Starting OpenWind Python process...')
-      pythonProcess = spawn('/home/damon/penv/bin/python', [pythonPath], {
-        stdio: ['pipe', 'pipe', 'pipe']
-      })
+      // Find Python: user-configured path, venv at plugin root, then common names
+      let pythonBin = null
+      const venvPython = path.join(__dirname, '..', 'venv', 'bin', 'python')
+      const candidates = options.pythonPath
+        ? [options.pythonPath, venvPython, 'python3', 'python']
+        : [venvPython, 'python3', 'python']
+      for (const candidate of candidates) {
+        try {
+          execSync(`${candidate} --version`, { stdio: 'ignore' })
+          pythonBin = candidate
+          break
+        } catch (e) { /* try next */ }
+      }
       
-      pythonProcess.stdout.on('data', (data) => {
-        //console.log('OpenWind Python output:', data.toString().trim())
-      })
+      if (!pythonBin) {
+        app.error('OpenWind: Could not find Python. Install Python 3 or create a venv at plugin root.')
+      } else {
+        pythonProcess = spawn(pythonBin, [pythonScript], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        })
       
-      pythonProcess.stderr.on('data', (data) => {
-        //console.log('OpenWind Python error:', data.toString().trim())
-      })
+        pythonProcess.stdout.on('data', (data) => {
+          //console.log('OpenWind Python output:', data.toString().trim())
+        })
       
-      pythonProcess.on('close', (code) => {
-        //console.log(`OpenWind Python process exited with code ${code}`)
-        pythonProcess = null
-      })
+        pythonProcess.stderr.on('data', (data) => {
+          //console.log('OpenWind Python error:', data.toString().trim())
+        })
       
-      pythonProcess.on('error', (err) => {
-        //console.log('OpenWind Python process error:', err)
-        pythonProcess = null
-      })
+        pythonProcess.on('close', (code) => {
+          //console.log(`OpenWind Python process exited with code ${code}`)
+          pythonProcess = null
+        })
       
-      // Log successful startup
-      pythonProcess.on('spawn', () => {
-        //console.log('OpenWind Python process started successfully')
-      })
+        pythonProcess.on('error', (err) => {
+          //console.log('OpenWind Python process error:', err)
+          pythonProcess = null
+        })
+      }
 
 
       timer = setInterval(() => {
@@ -380,6 +392,12 @@ module.exports = function(app) {
           "title": "Yaw Sensor Offset (degrees)",
           "description": "Offset to add to sensor yaw to match boat heading when mast is centered. Positive values increase yaw, negative values decrease yaw.",
           "default": 0
+        },
+        "pythonPath": {
+          "type": "string",
+          "title": "Python Binary Path",
+          "description": "Path to Python binary (e.g. /home/pi/venv/bin/python). Leave empty to auto-detect.",
+          "default": ""
         }
       }
     }

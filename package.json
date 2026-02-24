@@ -18,9 +18,8 @@
   },
   "main": "plugin/index.js",
   "scripts": {
-    "install": "./install.sh",
-    "install-signalk": "./install.sh",
     "postinstall": "./install-python-deps.sh",
+    "setup": "./install.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
