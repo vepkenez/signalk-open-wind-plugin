@@ -11,7 +11,7 @@ IMAGE="signalk/signalk-server:latest"
 PORT=3100
 PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 WAIT_SECS=15
-DATA_WAIT_SECS=5
+DATA_WAIT_SECS=8
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -37,7 +37,7 @@ echo ""
 
 # ── Preflight ────────────────────────────────────────────
 
-echo -e "${YELLOW}[1/6] Preflight checks${NC}"
+echo -e "${YELLOW}[1/7] Preflight checks${NC}"
 
 if ! docker info > /dev/null 2>&1; then
   fail "Docker is not running"
@@ -52,7 +52,7 @@ cleanup
 
 # ── Start container ──────────────────────────────────────
 
-echo -e "${YELLOW}[2/6] Starting SignalK server${NC}"
+echo -e "${YELLOW}[2/7] Starting SignalK server${NC}"
 
 docker run -d --name "$CONTAINER" \
   -p "$PORT":3000 \
@@ -76,9 +76,23 @@ for i in $(seq 1 "$WAIT_SECS"); do
   fi
 done
 
+# ── Install Python ───────────────────────────────────────
+
+echo -e "${YELLOW}[3/7] Installing Python 3${NC}"
+
+docker exec -u root "$CONTAINER" bash -c \
+  "apt-get update -qq && apt-get install -y -qq python3 python3-venv > /dev/null 2>&1"
+
+if docker exec "$CONTAINER" python3 --version > /dev/null 2>&1; then
+  pass "Python 3 installed"
+else
+  fail "Python 3 installation failed"
+  exit 1
+fi
+
 # ── Install plugin ───────────────────────────────────────
 
-echo -e "${YELLOW}[3/6] Installing plugin via npm${NC}"
+echo -e "${YELLOW}[4/7] Installing plugin via npm${NC}"
 
 OUTPUT=$(docker exec "$CONTAINER" bash -c \
   "cd /home/node/.signalk && npm install /plugin-source 2>&1")
@@ -100,7 +114,7 @@ fi
 
 # ── Enable plugin and restart ────────────────────────────
 
-echo -e "${YELLOW}[4/6] Enabling plugin and restarting${NC}"
+echo -e "${YELLOW}[5/7] Enabling plugin and restarting${NC}"
 
 docker exec "$CONTAINER" bash -c 'mkdir -p /home/node/.signalk/plugin-config-data && \
 cat > /home/node/.signalk/plugin-config-data/open-wind.json << INNEREOF
@@ -137,7 +151,7 @@ done
 
 # ── Verify data paths ───────────────────────────────────
 
-echo -e "${YELLOW}[5/6] Verifying plugin data paths${NC}"
+echo -e "${YELLOW}[6/7] Verifying plugin data paths${NC}"
 
 sleep "$DATA_WAIT_SECS"
 
@@ -169,7 +183,7 @@ check_path "sensors.mast.windAngle"
 
 # ── Verify webapp ────────────────────────────────────────
 
-echo -e "${YELLOW}[6/6] Verifying webapp${NC}"
+echo -e "${YELLOW}[7/7] Verifying webapp${NC}"
 
 HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "http://localhost:$PORT/open-wind" 2>&1)
 if [ "$HTTP_CODE" = "200" ]; then

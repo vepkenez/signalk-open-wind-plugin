@@ -15,8 +15,39 @@ module.exports = function(app) {
   
   // Python process for OpenWind
   let pythonProcess = null
+  let depInstallProcess = null
   let bleStatus = 'disconnected'
+  let lastDataTime = 0
+  let bleDisconnectTimer = null
+  const BLE_GRACE_PERIOD_MS = 5000
   const pluginVersion = require('../package.json').version
+
+  function setBleStatus(status) {
+    if (status === 'connected') {
+      if (bleDisconnectTimer) { clearTimeout(bleDisconnectTimer); bleDisconnectTimer = null }
+      bleStatus = 'connected'
+    } else if (status === 'disconnected' || status === 'not_found') {
+      if (bleStatus === 'connected' && !bleDisconnectTimer) {
+        bleDisconnectTimer = setTimeout(() => {
+          bleDisconnectTimer = null
+          bleStatus = status
+          pluginLog('BLE status → ' + status + ' (grace period expired)')
+        }, BLE_GRACE_PERIOD_MS)
+      } else if (bleStatus !== 'connected') {
+        bleStatus = status
+      }
+    } else {
+      bleStatus = status
+    }
+  }
+
+  const LOG_MAX = 50
+  const logBuffer = []
+  function pluginLog(msg) {
+    const ts = new Date().toISOString().slice(11, 19)
+    logBuffer.push(`${ts} ${msg}`)
+    if (logBuffer.length > LOG_MAX) logBuffer.shift()
+  }
   
   async function checkSignalKRemote(host, port = 3000, timeout = 5000) {
     const http = require('http')
@@ -157,13 +188,21 @@ module.exports = function(app) {
         }
       })
       
+      app.get('/open-wind/log', (req, res) => {
+        const n = Math.min(parseInt(req.query.n) || 3, LOG_MAX)
+        res.json(logBuffer.slice(-n))
+      })
+
       // UDP listener for OpenWind data
       const dgram = require('dgram')
       const udpSocket = dgram.createSocket('udp4')
       
       udpSocket.on('message', (msg, rinfo) => {
         const nmeaSentence = msg.toString().trim()
-        console.log('Received NMEA from OpenWind:', nmeaSentence)
+        if (nmeaSentence.startsWith('$')) {
+          lastDataTime = Date.now()
+          setBleStatus('connected')
+        }
         
         // Parse NMEA sentences
         if (nmeaSentence.startsWith('$WIMWV')) {
@@ -172,14 +211,14 @@ module.exports = function(app) {
           if (parts.length >= 4) {
             realAWA = parseFloat(parts[1]) * Math.PI / 180  // Convert to radians
             realAWS = parseFloat(parts[3]) * 0.514444  // Convert knots to m/s
-            console.log('Parsed wind data - AWA:', realAWA * 180 / Math.PI, 'AWS:', realAWS)
+            pluginLog('Wind AWA=' + (realAWA * 180 / Math.PI).toFixed(1) + '° AWS=' + (realAWS / 0.514444).toFixed(1) + 'kts')
           }
         } else if (nmeaSentence.startsWith('$WIHDM')) {
           // Heading data: $WIHDM,heading,M*checksum
           const parts = nmeaSentence.split(',')
           if (parts.length >= 2) {
             sensorYAW = parseFloat(parts[1]) * Math.PI / 180  // Convert to radians
-            console.log('Parsed heading data - YAW:', sensorYAW * 180 / Math.PI)
+            pluginLog('Yaw=' + (sensorYAW * 180 / Math.PI).toFixed(1) + '°')
           }
         }
       })
@@ -189,71 +228,116 @@ module.exports = function(app) {
       })
       
       // Spawn Python process for OpenWind
-      const { spawn, execSync } = require('child_process')
+      const { spawn, execSync, exec } = require('child_process')
       const pythonScript = path.join(__dirname, 'OpenWind.py')
-      
-      // Find Python: user-configured path, venv at plugin root, then common names
-      let pythonBin = null
-      const venvPython = path.join(__dirname, '..', 'venv', 'bin', 'python')
-      const candidates = options.pythonPath
+      const pluginDir = path.join(__dirname, '..')
+
+      function startPythonProcess(pythonBin) {
+        pluginLog('Starting Python process: ' + pythonBin)
+        pythonProcess = spawn(pythonBin, ['-u', pythonScript], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        })
+
+        pythonProcess.stdout.on('data', (data) => {
+          data.toString().split('\n').forEach(line => {
+            line = line.trim()
+            if (!line) return
+            if (line.includes('simulation mode')) { setBleStatus('simulation'); pluginLog('Python running in simulation mode') }
+            else if (line.includes('Connected to OpenWind')) { setBleStatus('connected'); pluginLog('BLE connected') }
+            else if (line.includes('disconnected')) { setBleStatus('disconnected'); pluginLog('BLE disconnected') }
+            else if (line.includes('not found')) { setBleStatus('not_found'); pluginLog('BLE device not found') }
+            else if (line.includes('Scanning')) { setBleStatus('scanning'); pluginLog('BLE scanning...') }
+          })
+        })
+
+        pythonProcess.stderr.on('data', (data) => {
+          pluginLog('Python: ' + data.toString().trim())
+        })
+
+        pythonProcess.on('close', (code) => {
+          pythonProcess = null
+        })
+
+        pythonProcess.on('error', (err) => {
+          pluginLog('Python process error: ' + err.message)
+          pythonProcess = null
+        })
+      }
+
+      // Find a working Python — prefer venv (has bleak) over system Python (simulation only)
+      const venvPython = path.join(pluginDir, 'venv', 'bin', 'python')
+      const pyCandidates = options.pythonPath
         ? [options.pythonPath, venvPython, 'python3', 'python']
         : [venvPython, 'python3', 'python']
-      for (const candidate of candidates) {
+
+      let pythonBin = null
+      for (const candidate of pyCandidates) {
         try {
-          execSync(`${candidate} --version`, { stdio: 'ignore' })
+          execSync(`"${candidate}" --version`, { stdio: 'ignore' })
           pythonBin = candidate
           break
         } catch (e) { /* try next */ }
       }
-      
-      if (!pythonBin) {
-        app.error('OpenWind: Could not find Python. Install Python 3 or create a venv at plugin root.')
+
+      if (pythonBin) {
+        startPythonProcess(pythonBin)
+
+        // If the chosen Python doesn't have bleak, install it into a venv
+        // in the background so BLE works on next restart
+        try {
+          execSync(`"${pythonBin}" -c "import bleak"`, { stdio: 'ignore', timeout: 10000 })
+        } catch (e) {
+          let sysPython = null
+          for (const name of ['python3', 'python']) {
+            try {
+              execSync(`${name} --version`, { stdio: 'ignore' })
+              sysPython = name
+              break
+            } catch (e2) { /* try next */ }
+          }
+          if (sysPython) {
+            const venvDir = path.join(pluginDir, 'venv')
+            const pipBin = path.join(venvDir, 'bin', 'pip')
+            pluginLog('Installing bleak into venv for BLE support (restart plugin when done)…')
+            depInstallProcess = exec(
+              `"${sysPython}" -m venv "${venvDir}" && "${pipBin}" install bleak`,
+              { timeout: 600000 },
+              (err) => {
+                depInstallProcess = null
+                if (err) {
+                  pluginLog('Failed to install bleak: ' + err.message)
+                  return
+                }
+                pluginLog('bleak installed into venv — restart plugin to enable BLE')
+              }
+            )
+          }
+        }
       } else {
-        pythonProcess = spawn(pythonBin, [pythonScript], {
-          stdio: ['pipe', 'pipe', 'pipe']
-        })
-      
-        pythonProcess.stdout.on('data', (data) => {
-          const line = data.toString().trim()
-          if (line.includes('Connected to OpenWind')) bleStatus = 'connected'
-          else if (line.includes('disconnected')) bleStatus = 'disconnected'
-          else if (line.includes('not found')) bleStatus = 'not_found'
-          else if (line.includes('Scanning')) bleStatus = 'scanning'
-        })
-      
-        pythonProcess.stderr.on('data', (data) => {
-          // Python stderr (warnings, tracebacks)
-        })
-      
-        pythonProcess.on('close', (code) => {
-          //console.log(`OpenWind Python process exited with code ${code}`)
-          pythonProcess = null
-        })
-      
-        pythonProcess.on('error', (err) => {
-          //console.log('OpenWind Python process error:', err)
-          pythonProcess = null
-        })
+        app.error('OpenWind: Python 3 not found. Install Python 3 and restart the plugin.')
+        pluginLog('Python 3 not found on this system')
       }
 
 
       timer = setInterval(() => {
         
-        latestHeading = app.getSelfPath('navigation.headingMagnetic.value') || (sensorYAW != null ? sensorYAW : 0) || 270 * Math.PI / 180
-        
-        // Use real OpenWind sensor data if available, otherwise fall back to simulated
-        let windSpeed
-        if (sensorYAW !== null) {
-          sensorYaw = sensorYAW
-          sensorWindAngle = realAWA
-          windSpeed = realAWS
-        } else {
-          // Fallback to simulated values
-          sensorYaw = latestHeading
-          // Simulated wind angle varies between 90° and 270° (π/2 to 3π/2 radians)
-          sensorWindAngle = Math.PI / 2 + Math.sin(t / 10) * Math.PI
-          windSpeed = amplitude * 0.5 * (Math.sin(t) + 1)
+        // If no data received for longer than the grace period, clear sensor values
+        if (lastDataTime > 0 && (Date.now() - lastDataTime) > BLE_GRACE_PERIOD_MS) {
+          realAWA = null
+          realAWS = null
+          sensorYAW = null
         }
+        
+        if (realAWA === null || realAWS === null) {
+          t += 0.1
+          return
+        }
+
+        latestHeading = app.getSelfPath('navigation.headingMagnetic.value') || (sensorYAW != null ? sensorYAW : 0) || 270 * Math.PI / 180
+
+        sensorYaw = sensorYAW !== null ? sensorYAW : latestHeading
+        sensorWindAngle = realAWA
+        let windSpeed = realAWS
 
         // Mast rotation = (Sensor Yaw + Offset) - Boat Heading
         const correctedYaw = sensorYaw + yawOffset
@@ -371,6 +455,7 @@ module.exports = function(app) {
     stop: function() {
       clearInterval(timer)
       timer = null
+      if (bleDisconnectTimer) { clearTimeout(bleDisconnectTimer); bleDisconnectTimer = null }
       
       // Close UDP socket if it exists
       if (typeof udpSocket !== 'undefined') {
@@ -378,9 +463,12 @@ module.exports = function(app) {
         //console.log('UDP socket closed')
       }
       
-      // Terminate Python process if it exists
+      if (depInstallProcess) {
+        depInstallProcess.kill()
+        depInstallProcess = null
+      }
+
       if (pythonProcess) {
-        //console.log('Terminating OpenWind Python process...')
         pythonProcess.kill('SIGTERM')
         pythonProcess = null
       }

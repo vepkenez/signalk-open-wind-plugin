@@ -18,9 +18,10 @@
   },
   "main": "plugin/index.js",
   "scripts": {
-    "postinstall": "./install-python-deps.sh",
     "setup": "./install.sh",
-    "test": "./test-docker.sh"
+    "test": "./test-docker.sh",
+    "dev": "vite",
+    "dev:docker": "docker compose -f docker-compose.dev.yml up -d"
   },
   "repository": {
     "type": "git",
@@ -41,7 +42,9 @@
   "dependencies": {
     "child_process": "^1.0.2"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "vite": "^6.0.0"
+  },
   "files": [
     "plugin/",
     "public/",
