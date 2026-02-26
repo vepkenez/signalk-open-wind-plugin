@@ -14,8 +14,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
-      '/open-wind/check-signalk': { target: 'http://localhost:3000', changeOrigin: true },
-      '/open-wind/check-local-signalk': { target: 'http://localhost:3000', changeOrigin: true },
+      '/open-wind/': { target: 'http://localhost:3000', changeOrigin: true },
     },
   },
 })

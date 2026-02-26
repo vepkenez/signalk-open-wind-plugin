@@ -215,6 +215,21 @@
     .status-dot.yellow { background: #ff9800; box-shadow: 0 0 4px #ff9800; }
     .status-dot.grey   { background: #555; }
 
+    /* Plugin log */
+    .log-box {
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: #0d1117;
+      border-radius: 8px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.72em;
+      line-height: 1.6;
+      color: #4a5568;
+      min-height: 3.6em;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
     @media (max-width: 480px) {
       .compass-wrap { max-width: 340px; }
       .data-grid { grid-template-columns: repeat(3, 1fr); }
@@ -254,7 +269,13 @@
         <line id="sensorYawLine" x1="0" y1="0" x2="0" y2="-180"
               stroke="#ff9800" stroke-width="2" stroke-dasharray="6,4" opacity="0.7"/>
 
-        <!-- Wind arrow (green) -->
+        <!-- Raw sensor wind direction (cyan dashed) -->
+        <g id="rawWindG">
+          <line x1="0" y1="0" x2="0" y2="-170" stroke="#00bcd4" stroke-width="2.5" stroke-dasharray="8,4" stroke-linecap="round"/>
+          <polygon points="0,-178 -5,-164 5,-164" fill="#00bcd4" opacity="0.8"/>
+        </g>
+
+        <!-- Corrected wind arrow (green) -->
         <g id="windArrowG">
           <line x1="0" y1="0" x2="0" y2="-170" stroke="#4CAF50" stroke-width="4" stroke-linecap="round"/>
           <polygon points="0,-182 -7,-166 7,-166" fill="#4CAF50"/>
@@ -268,8 +289,8 @@
           <line x1="0" y1="-30" x2="0" y2="28" stroke="#8899aa" stroke-width="0.8" opacity="0.4"/>
           <!-- Mast cross -->
           <g id="mastCross">
-            <line x1="0" y1="-14" x2="0" y2="14" stroke="#ff5252" stroke-width="3" stroke-linecap="round"/>
-            <line x1="-14" y1="0" x2="14" y2="0" stroke="#ff5252" stroke-width="3" stroke-linecap="round"/>
+            <line x1="0" y1="-44" x2="0" y2="44" stroke="#ff5252" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="-44" y1="0" x2="44" y2="0" stroke="#ff5252" stroke-width="1.8" stroke-linecap="round"/>
           </g>
         </g>
 
@@ -281,7 +302,8 @@
     <div class="legend">
       <span class="legend-item"><span class="legend-swatch" style="background:#8899aa"></span>Boat / Heading</span>
       <span class="legend-item"><span class="legend-swatch" style="background:#ff5252"></span>Mast Rotation</span>
-      <span class="legend-item"><span class="legend-swatch" style="background:#4CAF50"></span>Apparent Wind</span>
+      <span class="legend-item"><span class="legend-swatch dashed" style="color:#00bcd4"></span>Raw Sensor Wind</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#4CAF50"></span>Corrected AWA</span>
       <span class="legend-item"><span class="legend-swatch dashed" style="color:#ff9800"></span>Sensor Yaw</span>
     </div>
 
@@ -299,6 +321,10 @@
         <div class="data-value"><span id="valMastRot">--</span><span class="data-unit">&deg;</span></div>
       </div>
       <div class="data-item">
+        <div class="data-label">Raw Wind</div>
+        <div class="data-value"><span id="valRawWind">--</span><span class="data-unit">&deg;</span></div>
+      </div>
+      <div class="data-item">
         <div class="data-label">AWA</div>
         <div class="data-value"><span id="valAWA">--</span><span class="data-unit">&deg;</span></div>
       </div>
@@ -314,6 +340,8 @@
     <span id="bleStatus"><span class="status-dot grey"></span>BLE: --</span>
     <span id="skStatus"><span class="status-dot red"></span>SignalK: Connecting</span>
   </div>
+
+  <div class="log-box" id="logBox">--</div>
 </div>
 
 <script>
@@ -321,11 +349,12 @@
   let client;
   let globalMode = true;
 
-  let heading = null;       // boat heading (rad, global)
-  let sensorYaw = null;     // sensor compass (rad, global)
-  let mastRotation = null;  // mast rot relative to boat (rad)
-  let windAngle = null;     // apparent wind angle, boat-relative (rad)
-  let windSpeed = null;     // m/s
+  let heading = null;           // boat heading (rad, global)
+  let sensorYaw = null;         // sensor compass (rad, global)
+  let mastRotation = null;      // mast rot relative to boat (rad)
+  let sensorWindAngle = null;   // raw wind angle from sensor (rad, relative to sensor)
+  let windAngle = null;         // corrected apparent wind angle, boat-relative (rad)
+  let windSpeed = null;         // m/s
   let bleStatusVal = null;
   let pluginVersionVal = null;
 
@@ -385,13 +414,19 @@
     const boat = $('boatGroup');
     const cross = $('mastCross');
     const arrow = $('windArrowG');
+    const rawWind = $('rawWindG');
     const yawLine = $('sensorYawLine');
 
     const hDeg = heading !== null ? normDeg(rad2deg(heading)) : 0;
     const hasHeading = heading !== null;
 
+    // Raw sensor wind global direction = sensorYaw + sensorWindAngle
+    const hasRawWind = sensorYaw !== null && sensorWindAngle !== null;
+    const rawWindGlobalDeg = hasRawWind
+      ? normDeg(rad2deg(sensorYaw) + rad2deg(sensorWindAngle))
+      : 0;
+
     if (globalMode) {
-      // N at top: rose fixed, boat rotates to heading
       rose.setAttribute('transform', '');
       boat.setAttribute('transform', hasHeading ? `rotate(${hDeg})` : '');
       if (windAngle !== null && hasHeading) {
@@ -401,6 +436,12 @@
       } else {
         arrow.setAttribute('opacity', '0.2');
       }
+      if (hasRawWind) {
+        rawWind.setAttribute('transform', `rotate(${rawWindGlobalDeg})`);
+        rawWind.setAttribute('opacity', '1');
+      } else {
+        rawWind.setAttribute('opacity', '0.15');
+      }
       if (sensorYaw !== null) {
         yawLine.setAttribute('transform', `rotate(${normDeg(rad2deg(sensorYaw))})`);
         yawLine.setAttribute('opacity', '0.7');
@@ -408,7 +449,6 @@
         yawLine.setAttribute('opacity', '0.15');
       }
     } else {
-      // Bow at top: boat fixed, rose counter-rotates
       rose.setAttribute('transform', hasHeading ? `rotate(${-hDeg})` : '');
       boat.setAttribute('transform', '');
       if (windAngle !== null) {
@@ -416,6 +456,13 @@
         arrow.setAttribute('opacity', '1');
       } else {
         arrow.setAttribute('opacity', '0.2');
+      }
+      if (hasRawWind && hasHeading) {
+        const relRawWind = rawWindGlobalDeg - hDeg;
+        rawWind.setAttribute('transform', `rotate(${normDeg(relRawWind)})`);
+        rawWind.setAttribute('opacity', '1');
+      } else {
+        rawWind.setAttribute('opacity', '0.15');
       }
       if (sensorYaw !== null && hasHeading) {
         const relYaw = rad2deg(sensorYaw) - hDeg;
@@ -426,7 +473,6 @@
       }
     }
 
-    // Mast cross always rotates relative to boat
     if (mastRotation !== null) {
       cross.setAttribute('transform', `rotate(${rad2deg(mastRotation)})`);
     }
@@ -435,6 +481,7 @@
     $('valHeading').textContent = heading !== null ? normDeg(rad2deg(heading)).toFixed(1) : '--';
     $('valSensorYaw').textContent = sensorYaw !== null ? normDeg(rad2deg(sensorYaw)).toFixed(1) : '--';
     $('valMastRot').textContent = fmtAngle(mastRotation, true);
+    $('valRawWind').textContent = hasRawWind ? rawWindGlobalDeg.toFixed(1) : '--';
     $('valAWA').textContent = fmtAngle(windAngle, true);
     $('valWindSpeed').textContent = windSpeed !== null ? (windSpeed * 1.943844).toFixed(1) : '--';
   }
@@ -501,6 +548,8 @@
             mastRotation = v.value; changed = true; break;
           case 'sensors.mast.yaw':
             sensorYaw = v.value; changed = true; break;
+          case 'sensors.mast.windAngle':
+            sensorWindAngle = v.value; changed = true; break;
           case 'sensors.openwind.bluetoothStatus':
             bleStatusVal = v.value; updateBleStatusUI(); break;
           case 'sensors.openwind.pluginVersion':
@@ -528,6 +577,7 @@
     { path: 'environment.wind.speedApparent', period: 100 },
     { path: 'sensors.mast.rotation', period: 100 },
     { path: 'sensors.mast.yaw', period: 100 },
+    { path: 'sensors.mast.windAngle', period: 100 },
     { path: 'sensors.openwind.bluetoothStatus', period: 2000 },
     { path: 'sensors.openwind.pluginVersion', period: 10000 },
     { path: 'debug-awa-degrees', period: 100 },
@@ -628,6 +678,19 @@
       updateSkStatus(false);
     }
   }
+
+  // ── Log poller ─────────────────────────────────────────
+  function pollLog() {
+    fetch('/open-wind/log?n=3')
+      .then(r => r.json())
+      .then(lines => {
+        const el = $('logBox');
+        if (lines.length) el.textContent = lines.join('\n');
+      })
+      .catch(() => {});
+  }
+  setInterval(pollLog, 2000);
+  pollLog();
 
   // ── Bootstrap ──────────────────────────────────────────
   window.addEventListener('signalk-client-loaded', () => initSignalKClient());

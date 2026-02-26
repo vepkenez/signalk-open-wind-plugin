@@ -142,3 +142,9 @@ venv.bak/
 # Signal K specific
 *.log
 *.backup
+
+# Local deploy scripts
+deploy-pi.sh
+
+# BLE device cache
+.openwind_cache.json
