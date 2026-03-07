@@ -131,6 +131,10 @@
       width: 100%;
       height: 100%;
     }
+    .compass-wrap.no-heading {
+      opacity: 0.5;
+      filter: grayscale(0.6);
+    }
 
     /* Legend */
     .legend {
@@ -188,6 +192,9 @@
       font-size: 0.5em;
       color: #556;
       margin-left: 2px;
+    }
+    .data-item.no-value .data-value {
+      color: #556;
     }
 
     /* Status bar */
@@ -251,7 +258,7 @@
       <span id="labelBoat">Boat Relative</span>
     </div>
 
-    <div class="compass-wrap">
+    <div class="compass-wrap" id="compassWrap">
       <svg viewBox="-200 -200 400 400" id="compassSvg">
         <defs>
           <marker id="arrowHead" markerWidth="10" markerHeight="8" refX="5" refY="4" orient="auto">
@@ -308,7 +315,7 @@
     </div>
 
     <div class="data-grid">
-      <div class="data-item">
+      <div class="data-item" id="headingDataItem">
         <div class="data-label">Heading</div>
         <div class="data-value"><span id="valHeading">--</span><span class="data-unit">&deg;</span></div>
       </div>
@@ -419,6 +426,9 @@
 
     const hDeg = heading !== null ? normDeg(rad2deg(heading)) : 0;
     const hasHeading = heading !== null;
+
+    $('compassWrap').classList.toggle('no-heading', !hasHeading);
+    $('headingDataItem').classList.toggle('no-value', !hasHeading);
 
     // Raw sensor wind global direction = sensorYaw + sensorWindAngle
     const hasRawWind = sensorYaw !== null && sensorWindAngle !== null;
@@ -598,14 +608,14 @@
       updateSkStatus(false);
     }
 
-    if (client && typeof client.onConnect === 'function') {
+    if (client) {
       client.onConnect = () => {
         updateSkStatus(true);
         client.subscribe(SUBSCRIBE_PATHS, handleDelta);
       };
+      client.onDisconnect = () => updateSkStatus(false);
+      client.onError = () => updateSkStatus(false);
     }
-    client.onDisconnect = () => updateSkStatus(false);
-    client.onError = () => updateSkStatus(false);
   }
 
   // ── Client initialisation ──────────────────────────────
