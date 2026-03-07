@@ -1,6 +1,7 @@
 import socket
 import json
 import os
+import sys
 import time
 import math
 import asyncio
@@ -186,7 +187,8 @@ async def simulate():
 async def run():
     global cached_address
 
-    if not HAS_BLE:
+    # Force simulation when --simulate is passed (e.g. for dev/docker without a real sensor)
+    if '--simulate' in sys.argv or not HAS_BLE:
         await simulate()
         return
 

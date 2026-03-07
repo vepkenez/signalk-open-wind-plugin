@@ -24,7 +24,7 @@ services:
         fi
         mkdir -p plugin-config-data
         if [ ! -f plugin-config-data/open-wind.json ]; then
-          echo '{"enabled":true,"enableLogging":false,"configuration":{"amplitude":10,"interval":1000,"yawOffset":0,"pythonPath":""}}' > plugin-config-data/open-wind.json
+          echo '{"enabled":true,"enableLogging":false,"configuration":{"amplitude":10,"interval":1000,"yawOffset":0,"pythonPath":"","forceSimulation":true}}' > plugin-config-data/open-wind.json
         fi
         exec /home/node/signalk/node_modules/.bin/signalk-server -c /home/node/.signalk
     environment:

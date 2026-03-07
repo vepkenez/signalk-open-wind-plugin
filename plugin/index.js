@@ -19,8 +19,12 @@ module.exports = function(app) {
   let bleStatus = 'disconnected'
   let lastDataTime = 0
   let bleDisconnectTimer = null
+  let udpSocket = null
   const BLE_GRACE_PERIOD_MS = 5000
   const pluginVersion = require('../package.json').version
+
+  // Session logging for CSV download
+  let logPath = null // set in start() when enableLogging; used by POST /open-wind/log/clear
 
   function setBleStatus(status) {
     if (status === 'connected') {
@@ -43,10 +47,17 @@ module.exports = function(app) {
 
   const LOG_MAX = 50
   const logBuffer = []
+  let logStream = null
   function pluginLog(msg) {
     const ts = new Date().toISOString().slice(11, 19)
-    logBuffer.push(`${ts} ${msg}`)
+    const line = `${ts} ${msg}`
+    logBuffer.push(line)
     if (logBuffer.length > LOG_MAX) logBuffer.shift()
+    if (logStream) {
+      try {
+        logStream.write(line + '\n')
+      } catch (e) { /* ignore */ }
+    }
   }
   
   async function checkSignalKRemote(host, port = 3000, timeout = 5000) {
@@ -121,13 +132,31 @@ module.exports = function(app) {
     "version": "1.0.0",
     "webapp": "public",
     start: function(options) {
+      const path = require('path')
       const amplitude = options.amplitude || 10
       const interval = options.interval || 1000
       // Convert degrees to radians for yaw offset
       yawOffset = (options.yawOffset || 0) * Math.PI / 180
+      // Wind angle calibration offset (degrees): add to AWA so display matches reality when mast is straight
+      const windAngleOffsetDeg = typeof options.windAngleOffset === 'number' ? options.windAngleOffset : 0
+      const windAngleOffsetRad = windAngleOffsetDeg * Math.PI / 180
+
+      // Optional file log (when Enable logging is on)
+      logPath = null
+      if (options.enableLogging) {
+        try {
+          const os = require('os')
+          const fs = require('fs')
+          logPath = path.join(os.homedir(), '.signalk', 'open-wind-plugin.log')
+          logStream = fs.createWriteStream(logPath, { flags: 'a' })
+          logStream.on('error', () => { logStream = null })
+          pluginLog('Logging to ' + logPath)
+        } catch (e) {
+          pluginLog('Could not open log file: ' + e.message)
+        }
+      }
 
       // Register webapp routes
-      const path = require('path')
       const indexPath = path.join(__dirname, '..', 'public', 'index.html')
       
       app.get('/open-wind', (req, res) => {
@@ -193,12 +222,116 @@ module.exports = function(app) {
         res.json(logBuffer.slice(-n))
       })
 
+      // Session logging state (for CSV download)
+      const sessionRows = []
+      const sessionBufferSize = Math.max(1, parseInt(options.sessionBufferSize, 10) || 86400)
+      const activityWindowMs = Math.max(1000, parseInt(options.sessionActivityWindowMs, 10) || 3600000)
+      const POSITION_CHANGE_DEG = 0.00005   // ~5 m
+      const HEADING_CHANGE_RAD = 2 * Math.PI / 180  // 2 degrees
+      let lastActivityTime = 0
+      let lastSessionLat = null
+      let lastSessionLon = null
+      let lastSessionHeading = null
+      let forceRecording = false
+
+      app.get('/open-wind/session/csv', (req, res) => {
+        const fromParam = req.query.from
+        const toParam = req.query.to
+        let rows = sessionRows
+        if (fromParam && toParam) {
+          const fromMs = new Date(fromParam).getTime()
+          const toMs = new Date(toParam).getTime()
+          if (!isNaN(fromMs) && !isNaN(toMs)) {
+            rows = sessionRows.filter(r => {
+              const ms = new Date(r.timestamp).getTime()
+              return ms >= fromMs && ms <= toMs
+            })
+          }
+        }
+        const header = 'timestamp,latitude,longitude,apparent_wind_speed_kts,apparent_wind_angle_deg,apparent_wind_direction_deg,true_wind_speed_kts,true_wind_angle_deg,mast_rotation_deg,boat_heading_deg'
+        if (rows.length === 0) {
+          res.set('Content-Type', 'text/csv')
+          res.status(200).send(header + '\n')
+          return
+        }
+        const csvLines = [header]
+        for (const r of rows) {
+          const lat = r.latitude != null ? Number(r.latitude).toFixed(4) : ''
+          const lon = r.longitude != null ? Number(r.longitude).toFixed(4) : ''
+          const aws = (r.awsKts !== '' && r.awsKts != null) ? Number(r.awsKts).toFixed(2) : ''
+          const awa = (r.awaDeg !== '' && r.awaDeg != null) ? Number(r.awaDeg).toFixed(2) : ''
+          const awd = (r.awdDeg !== '' && r.awdDeg != null) ? Number(r.awdDeg).toFixed(2) : ''
+          const tws = r.twsKts !== '' && r.twsKts != null ? Number(r.twsKts).toFixed(2) : ''
+          const twa = r.twaDeg !== '' && r.twaDeg != null ? Number(r.twaDeg).toFixed(2) : ''
+          const mast = Number(r.mastRotationDeg).toFixed(2)
+          const hdg = Number(r.headingDeg).toFixed(2)
+          csvLines.push([r.timestamp, lat, lon, aws, awa, awd, tws, twa, mast, hdg].join(','))
+        }
+        const filename = 'open-wind-session-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv'
+        res.set('Content-Type', 'text/csv')
+        res.set('Content-Disposition', 'attachment; filename="' + filename + '"')
+        res.status(200).send(csvLines.join('\n'))
+      })
+
+      app.get('/open-wind/session/count', (req, res) => {
+        res.status(200).json({ count: sessionRows.length })
+      })
+
+      app.post('/open-wind/session/clear', (req, res) => {
+        sessionRows.length = 0
+        res.status(200).json({ cleared: true })
+      })
+
+      app.get('/open-wind/session/force-recording', (req, res) => {
+        res.status(200).json({ enabled: forceRecording })
+      })
+
+      app.put('/open-wind/session/force-recording', (req, res) => {
+        let enabled = forceRecording
+        if (req.query.enabled !== undefined) {
+          enabled = req.query.enabled === 'true' || req.query.enabled === '1'
+        } else if (req.body && typeof req.body.enabled === 'boolean') {
+          enabled = req.body.enabled
+        } else if (req.body && typeof req.body.enabled === 'string') {
+          enabled = req.body.enabled === 'true' || req.body.enabled === '1'
+        }
+        forceRecording = enabled
+        res.status(200).json({ enabled: forceRecording })
+      })
+
+      app.post('/open-wind/log/clear', (req, res) => {
+        const fs = require('fs')
+        if (!logPath) {
+          res.status(200).json({ cleared: false, message: 'No log file path' })
+          return
+        }
+        try {
+          if (logStream) {
+            try { logStream.end() } catch (e) { /* ignore */ }
+            logStream = null
+          }
+          if (fs.existsSync(logPath)) {
+            fs.writeFileSync(logPath, '')
+          }
+          if (options.enableLogging) {
+            logStream = fs.createWriteStream(logPath, { flags: 'a' })
+            logStream.on('error', () => { logStream = null })
+          }
+          res.status(200).json({ cleared: true })
+        } catch (e) {
+          res.status(500).json({ cleared: false, error: e.message })
+        }
+      })
+
       // UDP listener for OpenWind data
       const dgram = require('dgram')
-      const udpSocket = dgram.createSocket('udp4')
+      udpSocket = dgram.createSocket('udp4')
       
       udpSocket.on('message', (msg, rinfo) => {
         const nmeaSentence = msg.toString().trim()
+        if (options.enableDebug && nmeaSentence) {
+          pluginLog('UDP: ' + nmeaSentence)
+        }
         if (nmeaSentence.startsWith('$')) {
           lastDataTime = Date.now()
           setBleStatus('connected')
@@ -223,8 +356,13 @@ module.exports = function(app) {
         }
       })
       
+      udpSocket.on('error', (err) => {
+        pluginLog('UDP socket error: ' + err.message)
+        app.error('OpenWind UDP error: ' + err.message)
+      })
+      
       udpSocket.bind(2000, '127.0.0.1', () => {
-        //console.log('UDP listener started on port 2000 for OpenWind data')
+        pluginLog('UDP listener started on port 2000')
       })
       
       // Spawn Python process for OpenWind
@@ -233,8 +371,14 @@ module.exports = function(app) {
       const pluginDir = path.join(__dirname, '..')
 
       function startPythonProcess(pythonBin) {
-        pluginLog('Starting Python process: ' + pythonBin)
-        pythonProcess = spawn(pythonBin, ['-u', pythonScript], {
+        const args = ['-u', pythonScript]
+        if (options.forceSimulation) {
+          args.push('--simulate')
+          pluginLog('Starting Python process (simulation mode): ' + pythonBin)
+        } else {
+          pluginLog('Starting Python process: ' + pythonBin)
+        }
+        pythonProcess = spawn(pythonBin, args, {
           stdio: ['pipe', 'pipe', 'pipe']
         })
 
@@ -329,11 +473,35 @@ module.exports = function(app) {
         }
         
         if (realAWA === null || realAWS === null) {
+          // No wind data: when force recording is on, still push a row (e.g. at dock with no sensor)
+          if (forceRecording && options.enableSessionLogging !== false) {
+            const posRaw = app.getSelfPath('navigation.position.value') || app.getSelfPath('navigation.position')
+            const posVal = posRaw && posRaw.value ? posRaw.value : posRaw
+            const latitude = posVal && typeof posVal.latitude === 'number' ? posVal.latitude : null
+            const longitude = posVal && typeof posVal.longitude === 'number' ? posVal.longitude : null
+            const skHeading = app.getSelfPath('navigation.headingMagnetic.value')
+            const heading = skHeading != null ? skHeading : (sensorYAW != null ? sensorYAW : 0)
+            const row = {
+              timestamp: new Date().toISOString(),
+              latitude: latitude,
+              longitude: longitude,
+              awsKts: '',
+              awaDeg: '',
+              awdDeg: (heading * 180 / Math.PI + 360) % 360,
+              twsKts: '',
+              twaDeg: '',
+              mastRotationDeg: 0,
+              headingDeg: (heading * 180 / Math.PI + 360) % 360
+            }
+            sessionRows.push(row)
+            if (sessionRows.length > sessionBufferSize) sessionRows.shift()
+          }
           t += 0.1
           return
         }
 
-        latestHeading = app.getSelfPath('navigation.headingMagnetic.value') || (sensorYAW != null ? sensorYAW : 0) || 270 * Math.PI / 180
+        const skHeading = app.getSelfPath('navigation.headingMagnetic.value')
+        latestHeading = skHeading != null ? skHeading : (sensorYAW != null ? sensorYAW : 270 * Math.PI / 180)
 
         sensorYaw = sensorYAW !== null ? sensorYAW : latestHeading
         sensorWindAngle = realAWA
@@ -344,11 +512,57 @@ module.exports = function(app) {
         const mastRotation = correctedYaw - latestHeading
 
         // Apparent Wind Angle = Sensor Wind Angle + Mast Rotation
-        apparentAngle = (sensorWindAngle + mastRotation) || 180 * Math.PI / 180
+        const calcAngle = sensorWindAngle + mastRotation
+        apparentAngle = Number.isFinite(calcAngle) ? calcAngle : 180 * Math.PI / 180
 
         if (apparentAngle > Math.PI) apparentAngle -= 2 * Math.PI
         if (apparentAngle < -Math.PI) apparentAngle += 2 * Math.PI
-        
+
+        // Session logging for CSV: read position and true wind, update activity, push row if gate passes
+        const posRaw = app.getSelfPath('navigation.position.value') || app.getSelfPath('navigation.position')
+        const posVal = posRaw && posRaw.value ? posRaw.value : posRaw
+        const latitude = posVal && typeof posVal.latitude === 'number' ? posVal.latitude : null
+        const longitude = posVal && typeof posVal.longitude === 'number' ? posVal.longitude : null
+        const tws = app.getSelfPath('environment.wind.speedTrue.value')
+        const twaWater = app.getSelfPath('environment.wind.angleTrueWater.value')
+        const twaGround = app.getSelfPath('environment.wind.angleTrueGround.value')
+        const trueWindSpeed = typeof tws === 'number' ? tws : null
+        const trueWindAngle = typeof twaWater === 'number' ? twaWater : (typeof twaGround === 'number' ? twaGround : null)
+
+        const positionChanged = (latitude != null && longitude != null) && (
+          lastSessionLat == null || lastSessionLon == null ||
+          Math.abs(latitude - lastSessionLat) > POSITION_CHANGE_DEG ||
+          Math.abs(longitude - lastSessionLon) > POSITION_CHANGE_DEG
+        )
+        const headingChanged = lastSessionHeading == null || Math.abs(latestHeading - lastSessionHeading) > HEADING_CHANGE_RAD
+        // Only refresh activity when position or heading actually changed (not on first tick), so we don't record when boat has never moved
+        const hadPreviousFix = lastSessionLat != null || lastSessionLon != null || lastSessionHeading != null
+        if ((positionChanged || headingChanged) && hadPreviousFix) {
+          lastActivityTime = Date.now()
+        }
+        lastSessionLat = latitude
+        lastSessionLon = longitude
+        lastSessionHeading = latestHeading
+
+        const shouldRecord = forceRecording || (Date.now() - lastActivityTime <= activityWindowMs)
+        if (shouldRecord && (options.enableSessionLogging !== false)) {
+          const awdDeg = ((latestHeading * 180 / Math.PI) + (apparentAngle * 180 / Math.PI) + 360) % 360
+          const row = {
+            timestamp: new Date().toISOString(),
+            latitude: latitude,
+            longitude: longitude,
+            awsKts: windSpeed * 1.943844492440579,
+            awaDeg: apparentAngle * 180 / Math.PI,
+            awdDeg: awdDeg,
+            twsKts: trueWindSpeed != null ? trueWindSpeed * 1.943844492440579 : '',
+            twaDeg: trueWindAngle != null ? trueWindAngle * 180 / Math.PI : '',
+            mastRotationDeg: mastRotation * 180 / Math.PI,
+            headingDeg: (latestHeading * 180 / Math.PI + 360) % 360
+          }
+          sessionRows.push(row)
+          if (sessionRows.length > sessionBufferSize) sessionRows.shift()
+        }
+
         // Debug output every 10 seconds
         if (Math.floor(t * 10) % 10 === 0) {
           //console.log('Debug - SensorYaw:', (sensorYaw * 180 / Math.PI).toFixed(1) + '°', 'YawOffset:', (yawOffset * 180 / Math.PI).toFixed(1) + '°', 'CorrectedYaw:', (correctedYaw * 180 / Math.PI).toFixed(1) + '°', 'Heading:', (latestHeading * 180 / Math.PI).toFixed(1) + '°', 'MastRotation:', (mastRotation * 180 / Math.PI).toFixed(1) + '°', 'WindAngle:', (sensorWindAngle * 180 / Math.PI).toFixed(1) + '°', 'AWA:', (apparentAngle * 180 / Math.PI).toFixed(1) + '°')
@@ -416,7 +630,7 @@ module.exports = function(app) {
                   value: windSpeed * 1.943844492440579,
                   meta: {
                     units: 'knots',
-                    description: 'Apparent wind angle relative to bow'
+                    description: 'Apparent wind speed in knots'
                   }
                 },
                 {
@@ -457,10 +671,9 @@ module.exports = function(app) {
       timer = null
       if (bleDisconnectTimer) { clearTimeout(bleDisconnectTimer); bleDisconnectTimer = null }
       
-      // Close UDP socket if it exists
-      if (typeof udpSocket !== 'undefined') {
-        udpSocket.close()
-        //console.log('UDP socket closed')
+      if (udpSocket) {
+        try { udpSocket.close() } catch (e) { /* already closed */ }
+        udpSocket = null
       }
       
       if (depInstallProcess) {
@@ -471,6 +684,11 @@ module.exports = function(app) {
       if (pythonProcess) {
         pythonProcess.kill('SIGTERM')
         pythonProcess = null
+      }
+
+      if (logStream) {
+        try { logStream.end() } catch (e) { /* ignore */ }
+        logStream = null
       }
     },
 
@@ -500,6 +718,30 @@ module.exports = function(app) {
           "title": "Python Binary Path",
           "description": "Path to Python binary (e.g. /home/pi/venv/bin/python). Leave empty to auto-detect.",
           "default": ""
+        },
+        "forceSimulation": {
+          "type": "boolean",
+          "title": "Force simulation mode",
+          "description": "When on, the Python script sends dummy wind/yaw data over UDP instead of connecting to a real OpenWind BLE device. Use for development or testing (e.g. in Docker) without hardware.",
+          "default": false
+        },
+        "enableSessionLogging": {
+          "type": "boolean",
+          "title": "Enable session logging",
+          "description": "Record session data for CSV download (position, wind, heading). When off, no rows are pushed.",
+          "default": true
+        },
+        "sessionBufferSize": {
+          "type": "number",
+          "title": "Session buffer size",
+          "description": "Max number of session rows to keep in memory (e.g. 86400 = ~24 hours at 1 s interval).",
+          "default": 86400
+        },
+        "sessionActivityWindowMs": {
+          "type": "number",
+          "title": "Session activity window (ms)",
+          "description": "Only record when boat has moved or rotated within this many ms (e.g. 3600000 = 1 hour). Ignored if Force recording is on.",
+          "default": 3600000
         }
       }
     }

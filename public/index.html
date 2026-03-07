@@ -222,6 +222,84 @@
     .status-dot.yellow { background: #ff9800; box-shadow: 0 0 4px #ff9800; }
     .status-dot.grey   { background: #555; }
 
+    /* Download session section */
+    .download-section {
+      width: 100%;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #2a3a5c;
+    }
+    .download-section h3 {
+      font-size: 0.8em;
+      color: #8899aa;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .download-section .session-count {
+      font-size: 0.8em;
+      color: #64ffda;
+      margin-bottom: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .download-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      margin-bottom: 10px;
+    }
+    .download-row label { font-size: 0.8em; color: #8899aa; }
+    .download-section input[type="number"] {
+      width: 64px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #2a3a5c;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 0.9em;
+    }
+    .download-section input[type="datetime-local"] {
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #2a3a5c;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 0.85em;
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.85em;
+      cursor: pointer;
+      background: #2a3a5c;
+      color: #e0e0e0;
+    }
+    .btn:hover { background: #3a4a6c; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #3b82f6; }
+    .btn-ghost { background: transparent; color: #8899aa; }
+    .preset-btn { padding: 6px 10px; font-size: 0.8em; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      background: #16213e;
+      border-radius: 8px;
+      font-size: 0.85em;
+      color: #64ffda;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      z-index: 1000;
+      animation: fadeOut 2.5s ease-out forwards;
+    }
+    @keyframes fadeOut {
+      0%, 70% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
     /* Plugin log */
     .log-box {
       margin-top: 10px;
@@ -236,6 +314,7 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
+    .log-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 
     @media (max-width: 480px) {
       .compass-wrap { max-width: 340px; }
@@ -340,6 +419,38 @@
         <div class="data-value"><span id="valWindSpeed">--</span><span class="data-unit">kts</span></div>
       </div>
     </div>
+
+    <div class="download-section">
+      <h3>Download session data</h3>
+      <p class="session-count" id="sessionCount">Session: -- rows</p>
+      <div class="toggle-row">
+        <span id="labelForceOff" class="active">Motion required</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="forceRecordingToggle">
+          <span class="toggle-slider"></span>
+        </label>
+        <span id="labelForceOn">Record at dock</span>
+      </div>
+      <div class="download-row">
+        <label>Last</label>
+        <input type="number" id="sessionHours" min="0.25" max="168" step="0.25" placeholder="hours">
+        <span style="font-size:0.8em;color:#8899aa">hours</span>
+        <button type="button" class="btn preset-btn" data-hours="1">1h</button>
+        <button type="button" class="btn preset-btn" data-hours="2">2h</button>
+        <button type="button" class="btn preset-btn" data-hours="6">6h</button>
+        <button type="button" class="btn preset-btn" data-hours="24">24h</button>
+      </div>
+      <div class="download-row">
+        <label>From</label>
+        <input type="datetime-local" id="sessionFrom">
+        <label>To</label>
+        <input type="datetime-local" id="sessionTo">
+      </div>
+      <div class="download-row">
+        <button type="button" class="btn btn-primary" id="downloadCsvBtn">Download CSV</button>
+        <button type="button" class="btn btn-ghost" id="clearSessionBtn">Clear session</button>
+      </div>
+    </div>
   </div>
 
   <div class="status-bar">
@@ -348,7 +459,10 @@
     <span id="skStatus"><span class="status-dot red"></span>SignalK: Connecting</span>
   </div>
 
-  <div class="log-box" id="logBox">--</div>
+  <div class="log-row">
+    <div class="log-box" id="logBox">--</div>
+    <button type="button" class="btn btn-ghost" id="clearLogsBtn">Clear logs</button>
+  </div>
 </div>
 
 <script>
@@ -600,6 +714,7 @@
   function startApp() {
     buildCompassRose();
     initToggle();
+    initForceRecordingToggle();
 
     try {
       client.connect();
@@ -701,6 +816,125 @@
   }
   setInterval(pollLog, 2000);
   pollLog();
+
+  // ── Toast feedback ─────────────────────────────────────
+  function toast(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2600);
+  }
+
+  // ── Force recording toggle ─────────────────────────────
+  function initForceRecordingToggle() {
+    fetch('/open-wind/session/force-recording')
+      .then(r => r.json())
+      .then(data => {
+        const toggle = $('forceRecordingToggle');
+        toggle.checked = !!data.enabled;
+        updateForceLabels();
+      })
+      .catch(() => {});
+    const toggle = $('forceRecordingToggle');
+    const labelOff = $('labelForceOff');
+    const labelOn = $('labelForceOn');
+    function updateForceLabels() {
+      const on = toggle.checked;
+      labelOff.className = on ? '' : 'active';
+      labelOn.className = on ? 'active' : '';
+    }
+    toggle.addEventListener('change', () => {
+      updateForceLabels();
+      const enabled = toggle.checked;
+      fetch('/open-wind/session/force-recording?enabled=' + (enabled ? 'true' : 'false'), { method: 'PUT' })
+        .catch(() => toast('Failed to update'));
+    });
+  }
+
+  // ── Session preset hours ───────────────────────────────
+  document.querySelectorAll('.preset-btn[data-hours]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $('sessionHours').value = btn.getAttribute('data-hours');
+    });
+  });
+
+  // ── Session count ──────────────────────────────────────
+  function refreshSessionCount() {
+    fetch('/open-wind/session/count')
+      .then(r => r.json())
+      .then(data => {
+        const n = data.count != null ? data.count : 0;
+        $('sessionCount').textContent = 'Session: ' + n + ' row' + (n === 1 ? '' : 's');
+      })
+      .catch(() => { $('sessionCount').textContent = 'Session: -- rows'; });
+  }
+  setInterval(refreshSessionCount, 2500);
+  refreshSessionCount();
+
+  // ── Download CSV ───────────────────────────────────────
+  $('downloadCsvBtn').addEventListener('click', () => {
+    const fromInput = $('sessionFrom').value;
+    const toInput = $('sessionTo').value;
+    const hoursInput = $('sessionHours').value;
+    let url = '/open-wind/session/csv';
+    const params = [];
+    let fromIso, toIso;
+    if (fromInput && toInput) {
+      fromIso = new Date(fromInput).toISOString();
+      toIso = new Date(toInput).toISOString();
+    } else if (hoursInput && parseFloat(hoursInput) > 0) {
+      const hours = parseFloat(hoursInput);
+      toIso = new Date().toISOString();
+      fromIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    }
+    if (fromIso && toIso) {
+      params.push('from=' + encodeURIComponent(fromIso), 'to=' + encodeURIComponent(toIso));
+    }
+    if (params.length) url += '?' + params.join('&');
+    fetch(url)
+      .then(r => {
+        if (!r.ok) return r.text().then(() => { throw new Error('No data'); });
+        return r.blob();
+      })
+      .then(blob => {
+        const headerOnlySize = 130; // header line + newline
+        if (blob.size <= headerOnlySize) {
+          toast('No session data for this range.');
+          return;
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'open-wind-session.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast('Download started');
+        refreshSessionCount();
+      })
+      .catch(() => toast('No session data for this range.'));
+  });
+
+  // ── Clear session ──────────────────────────────────────
+  $('clearSessionBtn').addEventListener('click', () => {
+    fetch('/open-wind/session/clear', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        toast('Session cleared.');
+        refreshSessionCount();
+      })
+      .catch(() => toast('Failed to clear session'));
+  });
+
+  // ── Clear logs (disk) ──────────────────────────────────
+  $('clearLogsBtn').addEventListener('click', () => {
+    fetch('/open-wind/log/clear', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        toast(data.cleared ? 'Log file cleared.' : (data.message || 'Nothing to clear'));
+        if (data.cleared) pollLog();
+      })
+      .catch(() => toast('Failed to clear logs'));
+  });
 
   // ── Bootstrap ──────────────────────────────────────────
   window.addEventListener('signalk-client-loaded', () => initSignalKClient());
