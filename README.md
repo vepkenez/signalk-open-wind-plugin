@@ -181,6 +181,31 @@ The automatic reinstallation system should handle this, but if issues persist:
    /home/damon/penv/bin/python -c "import numpy, bleak"
    ```
 
+### Wind not visible on NMEA 2000 network
+
+Wind is sent to N2K by the **signalk-to-nmea2000** plugin (not by this plugin). This plugin only publishes to Signal K; signalk-to-nmea2000 converts that to PGN 130306 and emits it. If other devices don’t see wind:
+
+1. **Plugin config (Signal K → Server → Plugins → Signal K to NMEA 2000)**  
+   - Ensure **WINDv2** is **Enabled**.  
+   - Set **Source for environment.wind.angleApparent** to your open-wind source (e.g. `open-wind.urn:mrn:signalk:uuid:...`).  
+   - Set **Source for environment.wind.speedApparent** to the same source (or leave blank to use any source). Saving applies the change.
+
+2. **Confirm Signal K has wind**  
+   - In Admin UI, Data Browser (or REST): check `environment.wind.angleApparent` and `environment.wind.speedApparent` and that their `$source` is the open-wind plugin.
+
+3. **Confirm N2K connection can write**  
+   - In Server → Data Connections, the NMEA 2000 connection (e.g. can0) must be able to **write** (not read-only). If your setup only has an “input” pipe, add or use a connection that supports output (same interface is often bidirectional).
+
+4. **Check for PGN 130306 on the bus**  
+   On the Pi (or host with can0):
+   ```bash
+   candump can0 | grep -E '130306|1FD02'
+   ```
+   If you see lines when wind is updating in Signal K, the plugin is sending; if not, the problem is before the bus (config or connection).
+
+5. **Enable debug (optional)**  
+   In Signal K Admin, enable debug logging, restart, then check the server log for lines like `emit nmea2000JsonOut` to confirm the N2K plugin is emitting wind PGNs.
+
 ## Development
 
 ### Live webapp development
