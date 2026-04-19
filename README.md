@@ -15,6 +15,7 @@ A robust Signal K plugin for integrating OpenWind sensor data with automatic rei
 - [Installation](#installation)
   - [Quick Install](#quick-install)
   - [Manual Install](#manual-install)
+- [Uninstall](#uninstall)
 - [Configuration](#configuration)
 - [Plugin Settings](#plugin-settings)
 - [UDP Data Format](#udp-data-format)
@@ -78,6 +79,33 @@ If you prefer manual installation:
    ```bash
    # Modify ~/.signalk/signalk-server to call startup-plugins.sh
    ```
+
+## Uninstall
+
+If you installed the plugin via the Signal K app store and then ran `./install.sh` or `npm run setup`, the setup script has modified your Signal K config directory so the plugin is **automatically reinstalled** on every server start. That prevents a normal app-store uninstall from sticking: after you uninstall, the next restart reinstalls the plugin.
+
+To fully uninstall:
+
+1. **Revert the setup changes** so the server no longer reinstalls the plugin:
+   - Restore the original `~/.signalk/signalk-server` from the backup (if it exists):
+     ```bash
+     cp ~/.signalk/signalk-server.backup.YYYYMMDD_HHMMSS ~/.signalk/signalk-server
+     ```
+     Use the latest `signalk-server.backup.*` file. Or run the provided script:
+     ```bash
+     ./uninstall-setup.sh
+     ```
+   - Remove the reinstall script so this plugin is not re-added on start:
+     ```bash
+     rm ~/.signalk/startup-plugins.sh
+     ```
+     If you use `startup-plugins.sh` for other plugins, edit it instead and remove only the line `check_and_install "signalk-open-wind-plugin"`.
+
+2. **Uninstall the plugin** via the Signal K app store (or run `cd ~/.signalk && npm uninstall signalk-open-wind-plugin`).
+
+3. **Restart Signal K.** The plugin should stay uninstalled.
+
+Optional log file (only created if you enabled logging in the plugin): you can delete `~/.signalk/open-wind-plugin.log` if present.
 
 ## Configuration
 
@@ -232,6 +260,7 @@ signalk-open-wind-plugin/
 │   └── index.html            # Web dashboard
 ├── package.json              # Plugin metadata
 ├── install.sh                # Optional post-install setup (npm run setup)
+├── uninstall-setup.sh        # Revert install.sh changes so app-store uninstall works
 ├── install-python-deps.sh    # Python dependency installer (runs on postinstall)
 ├── test-docker.sh            # Docker integration test
 └── README.md

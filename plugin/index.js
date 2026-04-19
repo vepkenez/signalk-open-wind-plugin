@@ -1,4 +1,18 @@
 module.exports = function(app) {
+  /**
+   * Broadcast-only (BLE advertisements, no GATT) is the default.
+   * Prefer openWindBroadcastOnly; fall back to legacy useBleAdvertisements.
+   */
+  function openWindBroadcastOnlyEnabled(options) {
+    if (typeof options.openWindBroadcastOnly === 'boolean') {
+      return options.openWindBroadcastOnly
+    }
+    if (typeof options.useBleAdvertisements === 'boolean') {
+      return options.useBleAdvertisements
+    }
+    return true
+  }
+
   let timer
   let t = 0
   let latestHeading = 0
@@ -16,6 +30,8 @@ module.exports = function(app) {
   // Python process for OpenWind
   let pythonProcess = null
   let depInstallProcess = null
+  let restartPlugin = null
+  let reportedBleAddress = ''
   let bleStatus = 'disconnected'
   let lastDataTime = 0
   let bleDisconnectTimer = null
@@ -131,7 +147,8 @@ module.exports = function(app) {
     "description": "Simulates apparent wind including mast rotation and heading correction.",
     "version": "1.0.0",
     "webapp": "public",
-    start: function(options) {
+    start: function(options, restart) {
+      restartPlugin = typeof restart === 'function' ? restart : null
       const path = require('path')
       const amplitude = options.amplitude || 10
       const interval = options.interval || 1000
@@ -323,6 +340,68 @@ module.exports = function(app) {
         }
       })
 
+      function readOpenWindPluginOptions() {
+        try {
+          return app.readPluginOptions() || {}
+        } catch (e) {
+          return {}
+        }
+      }
+
+      app.get('/open-wind/settings/ble', (req, res) => {
+        const id = typeof options.openWindBleDeviceId === 'string' ? options.openWindBleDeviceId.trim() : ''
+        res.json({
+          openWindBleDeviceId: id,
+          reportedBleAddress: reportedBleAddress
+        })
+      })
+
+      app.put('/open-wind/settings/ble', (req, res) => {
+        let raw = ''
+        req.on('data', (chunk) => { raw += chunk })
+        req.on('end', () => {
+          let json = {}
+          if (raw) {
+            try {
+              json = JSON.parse(raw)
+            } catch (e) {
+              res.status(400).json({ ok: false, error: 'Invalid JSON body' })
+              return
+            }
+          }
+          const id = typeof json.openWindBleDeviceId === 'string' ? json.openWindBleDeviceId.trim() : ''
+          const stored = readOpenWindPluginOptions()
+          const merged = {
+            ...stored,
+            configuration: {
+              ...(stored.configuration || {}),
+              openWindBleDeviceId: id
+            }
+          }
+          app.savePluginOptions(merged, (err) => {
+            if (err) {
+              res.status(500).json({ ok: false, error: err.message })
+              return
+            }
+            pluginLog('Saved openWindBleDeviceId; reloading plugin')
+            res.json({ ok: true })
+            const cfg = merged.configuration || merged
+            setImmediate(() => {
+              if (restartPlugin) {
+                try {
+                  restartPlugin(cfg)
+                } catch (e) {
+                  pluginLog('restartPlugin failed: ' + e.message)
+                }
+              }
+            })
+          })
+        })
+        req.on('error', (e) => {
+          res.status(500).json({ ok: false, error: e.message })
+        })
+      })
+
       // UDP listener for OpenWind data
       const dgram = require('dgram')
       udpSocket = dgram.createSocket('udp4')
@@ -376,7 +455,20 @@ module.exports = function(app) {
           args.push('--simulate')
           pluginLog('Starting Python process (simulation mode): ' + pythonBin)
         } else {
-          pluginLog('Starting Python process: ' + pythonBin)
+          const reconnectDelay = (options.reconnectDelay != null) ? options.reconnectDelay : 15
+          args.push('--reconnect-delay', String(reconnectDelay))
+          if (openWindBroadcastOnlyEnabled(options)) {
+            args.push('--ble-advertisements', '--broadcast-only')
+            pluginLog('Starting Python process (BLE broadcast-only, no GATT): ' + pythonBin)
+          } else {
+            args.push('--ble-gatt')
+            pluginLog('Starting Python process (legacy BLE GATT connection): ' + pythonBin)
+          }
+          const bleId = typeof options.openWindBleDeviceId === 'string' ? options.openWindBleDeviceId.trim() : ''
+          if (bleId) {
+            args.push('--ble-device-id', bleId)
+            pluginLog('OpenWind BLE device id filter: ' + bleId)
+          }
         }
         pythonProcess = spawn(pythonBin, args, {
           stdio: ['pipe', 'pipe', 'pipe']
@@ -386,6 +478,10 @@ module.exports = function(app) {
           data.toString().split('\n').forEach(line => {
             line = line.trim()
             if (!line) return
+            if (line.startsWith('BLE_DEVICE_ADDRESS ')) {
+              reportedBleAddress = line.slice('BLE_DEVICE_ADDRESS '.length).trim()
+              return
+            }
             if (line.includes('simulation mode')) { setBleStatus('simulation'); pluginLog('Python running in simulation mode') }
             else if (line.includes('Connected to OpenWind')) { setBleStatus('connected'); pluginLog('BLE connected') }
             else if (line.includes('disconnected')) { setBleStatus('disconnected'); pluginLog('BLE disconnected') }
@@ -656,6 +752,14 @@ module.exports = function(app) {
                 {
                   path: 'sensors.openwind.pluginVersion',
                   value: pluginVersion
+                },
+                {
+                  path: 'sensors.openwind.bleDeviceAddress',
+                  value: reportedBleAddress
+                },
+                {
+                  path: 'sensors.openwind.bleDeviceIdConfigured',
+                  value: (typeof options.openWindBleDeviceId === 'string' ? options.openWindBleDeviceId : '').trim()
                 }
               ]
             }
@@ -669,6 +773,8 @@ module.exports = function(app) {
     stop: function() {
       clearInterval(timer)
       timer = null
+      restartPlugin = null
+      reportedBleAddress = ''
       if (bleDisconnectTimer) { clearTimeout(bleDisconnectTimer); bleDisconnectTimer = null }
       
       if (udpSocket) {
@@ -717,6 +823,24 @@ module.exports = function(app) {
           "type": "string",
           "title": "Python Binary Path",
           "description": "Path to Python binary (e.g. /home/pi/venv/bin/python). Leave empty to auto-detect.",
+          "default": ""
+        },
+        "reconnectDelay": {
+          "type": "number",
+          "title": "BLE reconnect delay (seconds)",
+          "description": "How long to wait before reconnecting after a signal loss. The manufacturer recommends 10–20 seconds to give the sensor time to re-initialise. Default: 15.",
+          "default": 15
+        },
+        "openWindBroadcastOnly": {
+          "type": "boolean",
+          "title": "Broadcast-only (no GATT connection)",
+          "description": "When on (default), wind and yaw come only from BLE advertisements—no Bluetooth connection, so phones and apps can still connect to the sensor for calibration. When off, the plugin uses a legacy GATT connection (exclusive). Turn off only if your firmware does not broadcast wind data.",
+          "default": true
+        },
+        "openWindBleDeviceId": {
+          "type": "string",
+          "title": "OpenWind BLE address / id (optional)",
+          "description": "If set, only this sensor is used (Linux: MAC like AA:BB:CC:DD:EE:FF; macOS CoreBluetooth: UUID string). Leave empty to auto-pick the first OpenWind seen and remember it in the plugin cache file. Use this when two OpenWinds are in range.",
           "default": ""
         },
         "forceSimulation": {
