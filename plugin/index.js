@@ -39,6 +39,16 @@ module.exports = function(app) {
   const BLE_GRACE_PERIOD_MS = 5000
   const pluginVersion = require('../package.json').version
 
+  // Stuck-yaw detection: some OpenWind units intermittently broadcast a yaw
+  // word of 0x0000 which decodes to exactly 270.0°. After enough consecutive
+  // 270.0° frames we ignore sensor yaw and treat the mast as aligned with
+  // the boat (mastRotation = yawOffset, typically 0) while still publishing
+  // everything else as normal.
+  const YAW_STUCK_DEG = 270
+  let yaw270Streak = 0
+  let yawStuck = false
+  let yawStuckThresholdFrames = 10
+
   // Session logging for CSV download
   let logPath = null // set in start() when enableLogging; used by POST /open-wind/log/clear
 
@@ -157,6 +167,16 @@ module.exports = function(app) {
       // Wind angle calibration offset (degrees): add to AWA so display matches reality when mast is straight
       const windAngleOffsetDeg = typeof options.windAngleOffset === 'number' ? options.windAngleOffset : 0
       const windAngleOffsetRad = windAngleOffsetDeg * Math.PI / 180
+
+      // Threshold of consecutive 270.0° yaw frames after which we treat the
+      // sensor yaw as stuck and override it to boat heading.
+      yaw270Streak = 0
+      yawStuck = false
+      yawStuckThresholdFrames = 10
+      if (Number.isFinite(options.yawStuckFrames) && options.yawStuckFrames >= 1) {
+        yawStuckThresholdFrames = Math.floor(options.yawStuckFrames)
+      }
+      pluginLog('Yaw stuck-at-270° threshold: ' + yawStuckThresholdFrames + ' frames')
 
       // Optional file log (when Enable logging is on)
       logPath = null
@@ -429,8 +449,28 @@ module.exports = function(app) {
           // Heading data: $WIHDM,heading,M*checksum
           const parts = nmeaSentence.split(',')
           if (parts.length >= 2) {
-            sensorYAW = parseFloat(parts[1]) * Math.PI / 180  // Convert to radians
-            pluginLog('Yaw=' + (sensorYAW * 180 / Math.PI).toFixed(1) + '°')
+            const yawDeg = parseFloat(parts[1])
+            sensorYAW = yawDeg * Math.PI / 180  // Convert to radians
+            pluginLog('Yaw=' + yawDeg.toFixed(1) + '°')
+
+            // Exactly 270.0° is the decode of the sensor's stuck 0x0000 raw
+            // word; any other value (jittery or not) is trusted.
+            if (Number.isFinite(yawDeg) && yawDeg === YAW_STUCK_DEG) {
+              yaw270Streak++
+              if (yaw270Streak === yawStuckThresholdFrames) {
+                yawStuck = true
+                pluginLog('OpenWind yaw stuck at ' + YAW_STUCK_DEG + '° for '
+                  + yaw270Streak + ' frames (threshold ' + yawStuckThresholdFrames
+                  + '); ignoring sensor yaw until a different reading arrives '
+                  + '(treating mast rotation as 0)')
+              }
+            } else {
+              if (yawStuck) {
+                pluginLog('OpenWind yaw recovered: ' + yawDeg.toFixed(1) + '°')
+              }
+              yaw270Streak = 0
+              yawStuck = false
+            }
           }
         }
       })
@@ -597,9 +637,20 @@ module.exports = function(app) {
         }
 
         const skHeading = app.getSelfPath('navigation.headingMagnetic.value')
-        latestHeading = skHeading != null ? skHeading : (sensorYAW != null ? sensorYAW : 270 * Math.PI / 180)
+        // When sensor yaw is stuck at 270°, don't let it contaminate the
+        // heading fallback chain — use SignalK heading if present, else 270°
+        // as before. Real boat heading (from another SK source) is strongly
+        // preferred in this case.
+        const sensorYawForHeading = yawStuck ? null : sensorYAW
+        latestHeading = skHeading != null ? skHeading : (sensorYawForHeading != null ? sensorYawForHeading : 270 * Math.PI / 180)
 
-        sensorYaw = sensorYAW !== null ? sensorYAW : latestHeading
+        // If the sensor's yaw is stuck, pretend the mast is aligned with the
+        // boat so mastRotation collapses to yawOffset (≈ 0 by default) and
+        // AWA is published as if it came straight off the sensor, without
+        // factoring in a broken yaw reading.
+        sensorYaw = yawStuck
+          ? latestHeading
+          : (sensorYAW !== null ? sensorYAW : latestHeading)
         sensorWindAngle = realAWA
         let windSpeed = realAWS
 
@@ -842,6 +893,12 @@ module.exports = function(app) {
           "title": "OpenWind BLE address / id (optional)",
           "description": "If set, only this sensor is used (Linux: MAC like AA:BB:CC:DD:EE:FF; macOS CoreBluetooth: UUID string). Leave empty to auto-pick the first OpenWind seen and remember it in the plugin cache file. Use this when two OpenWinds are in range.",
           "default": ""
+        },
+        "yawStuckFrames": {
+          "type": "number",
+          "title": "Yaw stuck-at-270° threshold (frames)",
+          "description": "Some OpenWind units intermittently broadcast a yaw word of 0x0000 which decodes to exactly 270°. After this many consecutive 270.0° frames (~0.25 s each) the plugin stops factoring the sensor yaw into the wind computation and treats the mast as aligned with the boat (mast rotation = 0). All other values pass through unchanged. Default: 10.",
+          "default": 10
         },
         "forceSimulation": {
           "type": "boolean",
