@@ -116,6 +116,9 @@ fi
 
 echo -e "${YELLOW}[5/7] Enabling plugin and restarting${NC}"
 
+# forceSimulation is off: OpenWind.py uses simulation automatically when bleak
+# is not installed (typical in this container). With bleak + no sensor, the test
+# may need a longer wait or a real OpenWind in range.
 docker exec "$CONTAINER" bash -c 'mkdir -p /home/node/.signalk/plugin-config-data && \
 cat > /home/node/.signalk/plugin-config-data/open-wind.json << INNEREOF
 {
@@ -125,7 +128,9 @@ cat > /home/node/.signalk/plugin-config-data/open-wind.json << INNEREOF
     "amplitude": 10,
     "interval": 1000,
     "yawOffset": 0,
-    "pythonPath": ""
+    "pythonPath": "",
+    "openWindBroadcastOnly": true,
+    "openWindBleDeviceId": ""
   }
 }
 INNEREOF'

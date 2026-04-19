@@ -223,6 +223,42 @@
     .status-dot.grey   { background: #555; }
 
     /* Download session section */
+    .ble-settings {
+      width: 100%;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid #2a3a5c;
+    }
+    .ble-settings h3 {
+      font-size: 0.8em;
+      color: #8899aa;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    .ble-line { margin-bottom: 10px; font-size: 0.85em; color: #c8d0e0; line-height: 1.45; }
+    .ble-line .muted { color: #8899aa; font-size: 0.92em; }
+    .ble-label {
+      display: block;
+      font-size: 0.78em;
+      color: #8899aa;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .ble-text-input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #2a3a5c;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 0.85em;
+      margin-bottom: 10px;
+      font-family: 'SF Mono', 'Consolas', monospace;
+    }
+    .ble-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+
     .download-section {
       width: 100%;
       margin-top: 20px;
@@ -420,6 +456,21 @@
       </div>
     </div>
 
+    <div class="ble-settings">
+      <h3>OpenWind Bluetooth</h3>
+      <p class="ble-line">
+        <span class="muted">Active sensor address</span><br>
+        <strong id="bleReportedAddress" style="font-variant-numeric: tabular-nums;">--</strong>
+      </p>
+      <p class="ble-line muted" id="bleConfiguredMirror" style="font-size:0.78em"></p>
+      <label class="ble-label" for="bleDeviceIdInput">Use only this BLE id (optional)</label>
+      <input type="text" id="bleDeviceIdInput" class="ble-text-input" placeholder="MAC or UUID — leave empty for auto" autocomplete="off" spellcheck="false" />
+      <div class="ble-row">
+        <button type="button" class="btn btn-primary" id="saveBleDeviceIdBtn">Save &amp; reload bridge</button>
+        <span id="bleSaveMessage" class="muted" style="font-size:0.78em"></span>
+      </div>
+    </div>
+
     <div class="download-section">
       <h3>Download session data</h3>
       <p class="session-count" id="sessionCount">Session: -- rows</p>
@@ -478,6 +529,8 @@
   let windSpeed = null;         // m/s
   let bleStatusVal = null;
   let pluginVersionVal = null;
+  let bleAddressReported = null;
+  let bleIdConfigured = null;
 
   // ── DOM refs ───────────────────────────────────────────
   const $ = id => document.getElementById(id);
@@ -653,6 +706,62 @@
     $('pluginVersion').textContent = pluginVersionVal ? `Open Wind v${pluginVersionVal}` : 'Open Wind --';
   }
 
+  function updateBleAddressUI() {
+    const rep = $('bleReportedAddress');
+    const mirror = $('bleConfiguredMirror');
+    if (rep) {
+      rep.textContent = (bleAddressReported != null && String(bleAddressReported).trim() !== '')
+        ? String(bleAddressReported).trim()
+        : '--';
+    }
+    if (mirror) {
+      mirror.textContent = (bleIdConfigured != null && String(bleIdConfigured).trim() !== '')
+        ? 'Bound id (server): ' + String(bleIdConfigured).trim()
+        : 'No bound id in server config — first OpenWind in range is used, then remembered in the plugin cache on the server.';
+    }
+  }
+
+  function initBleDeviceSettings() {
+    const input = $('bleDeviceIdInput');
+    const btn = $('saveBleDeviceIdBtn');
+    const msg = $('bleSaveMessage');
+    if (!input || !btn) return;
+
+    function loadBleSettings() {
+      fetch('/open-wind/settings/ble')
+        .then(r => r.json())
+        .then(data => {
+          if (data.openWindBleDeviceId != null) input.value = data.openWindBleDeviceId;
+          if (data.reportedBleAddress) bleAddressReported = data.reportedBleAddress;
+          if (data.openWindBleDeviceId != null) bleIdConfigured = data.openWindBleDeviceId;
+          updateBleAddressUI();
+        })
+        .catch(() => {});
+    }
+
+    loadBleSettings();
+
+    btn.addEventListener('click', () => {
+      const id = input.value.trim();
+      msg.textContent = 'Saving…';
+      fetch('/open-wind/settings/ble', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ openWindBleDeviceId: id })
+      })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => {
+          if (!ok) throw new Error(j.error || 'Save failed');
+          msg.textContent = 'Saved.';
+          toast('BLE device id saved — bridge reloading');
+          bleIdConfigured = id;
+          updateBleAddressUI();
+          setTimeout(loadBleSettings, 1200);
+        })
+        .catch(e => { msg.textContent = e.message || 'Failed'; });
+    });
+  }
+
   // ── Signal K delta handler ─────────────────────────────
   function handleDelta(delta) {
     if (!delta || !delta.updates) return;
@@ -678,6 +787,10 @@
             bleStatusVal = v.value; updateBleStatusUI(); break;
           case 'sensors.openwind.pluginVersion':
             pluginVersionVal = v.value; updatePluginVersionUI(); break;
+          case 'sensors.openwind.bleDeviceAddress':
+            bleAddressReported = v.value; updateBleAddressUI(); break;
+          case 'sensors.openwind.bleDeviceIdConfigured':
+            bleIdConfigured = v.value; updateBleAddressUI(); break;
           // Debug paths (degrees)
           case 'debug-awa-degrees':
             windAngle = v.value * Math.PI / 180; changed = true; break;
@@ -704,6 +817,8 @@
     { path: 'sensors.mast.windAngle', period: 100 },
     { path: 'sensors.openwind.bluetoothStatus', period: 2000 },
     { path: 'sensors.openwind.pluginVersion', period: 10000 },
+    { path: 'sensors.openwind.bleDeviceAddress', period: 2000 },
+    { path: 'sensors.openwind.bleDeviceIdConfigured', period: 2000 },
     { path: 'debug-awa-degrees', period: 100 },
     { path: 'debug-wind-speed-knots', period: 100 },
     { path: 'debug-mast-rotation-degrees', period: 100 },
@@ -715,6 +830,7 @@
     buildCompassRose();
     initToggle();
     initForceRecordingToggle();
+    initBleDeviceSettings();
 
     try {
       client.connect();
