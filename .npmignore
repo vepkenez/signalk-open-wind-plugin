@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.openwind_cache.json
+.venv/
+venv/
+node_modules/
+npm-debug.log*
+.DS_Store
+docker-compose.dev.yml
+test-docker.sh
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+scripts/
