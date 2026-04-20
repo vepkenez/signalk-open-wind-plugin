@@ -85,6 +85,34 @@ module.exports = function(app) {
       } catch (e) { /* ignore */ }
     }
   }
+
+  /** NMEA 0183 XOR checksum for the substring starting after `$` up to but not including `*`. */
+  function nmea0183Checksum(sentenceDollarNoStar) {
+    let c = 0
+    for (let i = 1; i < sentenceDollarNoStar.length; i++) {
+      c ^= sentenceDollarNoStar.charCodeAt(i)
+    }
+    return ('0' + (c & 0xff).toString(16)).slice(-2).toUpperCase()
+  }
+
+  /**
+   * @param {'none'|'rudder_rsa'|'heel_roll_xdr'} mode
+   * @param {number} degSigned mast rotation in degrees
+   * @returns {string|null} full sentence including CRLF, or null if disabled
+   */
+  function formatMastRotationNmea(mode, degSigned) {
+    if (mode !== 'rudder_rsa' && mode !== 'heel_roll_xdr') return null
+    const d = Number.isFinite(degSigned) ? degSigned : 0
+    const degStr = d.toFixed(1)
+    let body
+    if (mode === 'rudder_rsa') {
+      body = 'WIRSA,' + degStr + ',A,,V'
+    } else {
+      body = 'WIXDR,A,' + degStr + ',D,ROLL'
+    }
+    const dollarBody = '$' + body
+    return dollarBody + '*' + nmea0183Checksum(dollarBody) + '\r\n'
+  }
   
   async function checkSignalKRemote(host, port = 3000, timeout = 5000) {
     const http = require('http')
@@ -155,7 +183,7 @@ module.exports = function(app) {
     "id": "open-wind",
     "name": "Open Wind Plugin",
     "description": "Simulates apparent wind including mast rotation and heading correction.",
-    "version": "1.0.0",
+    "version": pluginVersion,
     "webapp": "public",
     start: function(options, restart) {
       restartPlugin = typeof restart === 'function' ? restart : null
@@ -715,6 +743,20 @@ module.exports = function(app) {
           //console.log('Debug - SensorYaw:', (sensorYaw * 180 / Math.PI).toFixed(1) + '°', 'YawOffset:', (yawOffset * 180 / Math.PI).toFixed(1) + '°', 'CorrectedYaw:', (correctedYaw * 180 / Math.PI).toFixed(1) + '°', 'Heading:', (latestHeading * 180 / Math.PI).toFixed(1) + '°', 'MastRotation:', (mastRotation * 180 / Math.PI).toFixed(1) + '°', 'WindAngle:', (sensorWindAngle * 180 / Math.PI).toFixed(1) + '°', 'AWA:', (apparentAngle * 180 / Math.PI).toFixed(1) + '°')
         }
 
+        const mastNmeaMode = options.mastRotationNmeaMode || 'none'
+        const mastNmeaHost = (typeof options.mastRotationNmeaHost === 'string' ? options.mastRotationNmeaHost : '').trim()
+        const mastNmeaPortRaw = options.mastRotationNmeaPort
+        const mastNmeaPort = Number.isFinite(mastNmeaPortRaw) ? Math.floor(mastNmeaPortRaw) : 10110
+        if (mastNmeaMode !== 'none' && mastNmeaHost && udpSocket) {
+          const mastDeg = mastRotation * 180 / Math.PI
+          const nmeaLine = formatMastRotationNmea(mastNmeaMode, mastDeg)
+          if (nmeaLine) {
+            udpSocket.send(Buffer.from(nmeaLine, 'utf8'), mastNmeaPort, mastNmeaHost, (err) => {
+              if (err && options.enableDebug) pluginLog('Mast rotation NMEA UDP: ' + err.message)
+            })
+          }
+        }
+
         app.handleMessage('plugin.open-wind', {
           updates: [
             {
@@ -923,6 +965,25 @@ module.exports = function(app) {
           "title": "Session activity window (ms)",
           "description": "Only record when boat has moved or rotated within this many ms (e.g. 3600000 = 1 hour). Ignored if Force recording is on.",
           "default": 3600000
+        },
+        "mastRotationNmeaMode": {
+          "type": "string",
+          "title": "Mast rotation NMEA output",
+          "description": "Send mast rotation (signed degrees, same as sensors.mast.rotation) as NMEA 0183 over UDP when Mast rotation NMEA host is set. Rudder: RSA (rudder-angle gauge). Heel/roll: XDR with ROLL transducer (heel-style gauge on many plotters).",
+          "enum": ["none", "rudder_rsa", "heel_roll_xdr"],
+          "default": "none"
+        },
+        "mastRotationNmeaHost": {
+          "type": "string",
+          "title": "Mast rotation NMEA UDP host",
+          "description": "Destination IP or hostname for mast rotation sentences (e.g. serial bridge or 127.0.0.1). Leave empty to disable. Uses the same update interval as wind data; not port 2000 (that is inbound from OpenWind only).",
+          "default": ""
+        },
+        "mastRotationNmeaPort": {
+          "type": "number",
+          "title": "Mast rotation NMEA UDP port",
+          "description": "UDP destination port for mast rotation NMEA (default 10110).",
+          "default": 10110
         }
       }
     }
