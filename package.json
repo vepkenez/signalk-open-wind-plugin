@@ -1,6 +1,6 @@
 {
   "name": "signalk-open-wind-plugin",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Signal K plugin for OpenWind mast wind sensors. Hardware: https://www.openwind.de",
   "keywords": [
     "signalk-node-server-plugin",
