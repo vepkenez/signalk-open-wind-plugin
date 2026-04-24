@@ -182,7 +182,7 @@ module.exports = function(app) {
   return {
     "id": "open-wind",
     "name": "Open Wind Plugin",
-    "description": "Simulates apparent wind including mast rotation and heading correction.",
+    "description": "OpenWind mast sensor → Signal K (mast rotation & heading). Hardware: https://www.openwind.de",
     "version": pluginVersion,
     "webapp": "public",
     start: function(options, restart) {

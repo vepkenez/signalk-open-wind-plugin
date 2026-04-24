@@ -6,7 +6,7 @@
 [![GitHub Issues](https://img.shields.io/github/issues/vepkenez/signalk-open-wind-plugin.svg)](https://github.com/vepkenez/signalk-open-wind-plugin/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/vepkenez/signalk-open-wind-plugin.svg)](https://github.com/vepkenez/signalk-open-wind-plugin/stargazers)
 
-A robust Signal K plugin for integrating OpenWind sensor data with automatic reinstallation capabilities.
+A robust Signal K plugin for integrating [OpenWind](https://www.openwind.de) mast wind sensor data with automatic reinstallation capabilities. This repository is a community Signal K integration; the **OpenWind** instrument (AWA/AWS, compass, motion, BLE, and related ecosystem) is designed and sold by the team behind [openwind.de](https://www.openwind.de).
 
 ## Table of Contents
 
@@ -25,6 +25,7 @@ A robust Signal K plugin for integrating OpenWind sensor data with automatic rei
 - [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
+- [Acknowledgements](#acknowledgements)
 
 ## Features
 
@@ -308,3 +309,9 @@ For issues and questions:
 - Check the troubleshooting section above
 - Review Signal K server logs
 - Verify plugin configuration in Signal K admin interface
+
+## Acknowledgements
+
+**OpenWind hardware** — This plugin exists to bring [OpenWind](https://www.openwind.de) sensor data into Signal K. Special thanks to the OpenWind manufacturer and product team for the device, documentation, and BLE broadcast behaviour that make integrations like this possible.
+
+OpenWind is a trademark of its respective owner; this plugin is not affiliated with or endorsed by the OpenWind manufacturer or [openwind.de](https://www.openwind.de) unless they say otherwise. For calibration, firmware, apps, and official support, use the manufacturer’s site and apps.

@@ -357,6 +357,23 @@
       .data-grid { grid-template-columns: repeat(3, 1fr); }
       .data-value { font-size: 1.2em; }
     }
+
+    .attribution {
+      margin-top: 20px;
+      padding: 14px 18px;
+      text-align: center;
+      font-size: 0.78em;
+      line-height: 1.55;
+      color: #667;
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .attribution a {
+      color: #64ffda;
+      text-decoration: none;
+    }
+    .attribution a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -514,6 +531,12 @@
     <div class="log-box" id="logBox">--</div>
     <button type="button" class="btn btn-ghost" id="clearLogsBtn">Clear logs</button>
   </div>
+
+  <footer class="attribution">
+    Wind and motion data come from <strong>OpenWind</strong> hardware; more at
+    <a href="https://www.openwind.de" rel="noopener noreferrer" target="_blank">openwind.de</a>.
+    This Signal K plugin is independent community software, not an official OpenWind product.
+  </footer>
 </div>
 
 <script>

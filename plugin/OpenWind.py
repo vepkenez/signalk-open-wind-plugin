@@ -1,3 +1,6 @@
+# BLE → UDP bridge for OpenWind mast sensors. Hardware: https://www.openwind.de
+# Originally derived from https://github.com/michaelliesenberg/OpenWind_Python
+
 import socket
 import json
 import os
